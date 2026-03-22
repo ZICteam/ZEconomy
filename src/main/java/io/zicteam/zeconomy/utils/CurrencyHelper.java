@@ -113,6 +113,7 @@ public class CurrencyHelper {
         for (UUID uuid : CurrencyPlayerData.SERVER.playersCurrencyMap.keySet()) {
             CurrencyPlayerData.SERVER.getPlayersCurrency(uuid).add(new CurrencyPlayerData.PlayerCurrency(currency.copy(), currency.getDefaultValue()));
         }
+        DataStorageManager.markDirty();
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         if (server != null) {
             syncCurrencyData(server);
@@ -144,6 +145,7 @@ public class CurrencyHelper {
         for (UUID uuid : CurrencyPlayerData.SERVER.playersCurrencyMap.keySet()) {
             CurrencyPlayerData.SERVER.getPlayersCurrency(uuid).removeIf(c -> c.currency.getName().equals(id));
         }
+        DataStorageManager.markDirty();
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         if (server != null) {
             syncCurrencyData(server);
@@ -169,6 +171,13 @@ public class CurrencyHelper {
             return;
         }
         DataStorageManager.saveAll(server);
+    }
+
+    public static void scheduleSave(MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+        DataStorageManager.scheduleSave(server);
     }
 
     public static void saveCurrencyData() {
@@ -211,6 +220,7 @@ public class CurrencyHelper {
         }
         CustomPlayerData.Data data = CustomPlayerData.SERVER.getPlayerCustomData(player);
         consumer.accept(data.nbt);
+        DataStorageManager.markDirty();
         syncCustomData(player);
         return ErrorCodes.SUCCESS;
     }

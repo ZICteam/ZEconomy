@@ -57,7 +57,7 @@ public final class AdminOperationService {
         ZEconomy.EXTRA_DATA.ensureDefaultRates();
         CurrencyHelper.refreshPlayerState(player);
         if (saveAfter && player.server != null) {
-            CurrencyHelper.saveAll(player.server);
+            CurrencyHelper.scheduleSave(player.server);
         }
     }
 
@@ -76,7 +76,7 @@ public final class AdminOperationService {
             }
         }
         if (saveAfter && player.server != null) {
-            CurrencyHelper.saveAll(player.server);
+            CurrencyHelper.scheduleSave(player.server);
         }
         return new DoctorFixResult(vaultAttempted, vaultOk);
     }

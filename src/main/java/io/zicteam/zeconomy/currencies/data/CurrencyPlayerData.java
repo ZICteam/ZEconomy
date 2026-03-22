@@ -19,6 +19,7 @@ import io.zicteam.zeconomy.ZEconomy;
 import io.zicteam.zeconomy.api.event.BalanceChangeEvent;
 import io.zicteam.zeconomy.api.event.ZEconomyApiEvents;
 import io.zicteam.zeconomy.currencies.BaseCurrency;
+import io.zicteam.zeconomy.system.DataStorageManager;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
 import io.zicteam.zeconomy.utils.ErrorCodeStruct;
 import io.zicteam.zeconomy.utils.ErrorCodes;
@@ -136,6 +137,7 @@ public class CurrencyPlayerData {
                 playerCurrency.balance = 0.0;
             }
             ZEconomyApiEvents.post(new BalanceChangeEvent(playerId, currencyId, oldBalance, playerCurrency.balance, "ADD"));
+            DataStorageManager.markDirty();
             queueBalanceSideEffects(playerId, currencyId);
             return ErrorCodes.SUCCESS;
         }
@@ -155,6 +157,7 @@ public class CurrencyPlayerData {
             double oldBalance = playerCurrency.balance;
             playerCurrency.balance = Math.max(0.0, value);
             ZEconomyApiEvents.post(new BalanceChangeEvent(playerId, currencyId, oldBalance, playerCurrency.balance, "SET"));
+            DataStorageManager.markDirty();
             queueBalanceSideEffects(playerId, currencyId);
             return ErrorCodes.SUCCESS;
         }
@@ -227,6 +230,7 @@ public class CurrencyPlayerData {
                 return ErrorCodes.NOT_FOUND;
             }
             currency.get().isLocked = value;
+            DataStorageManager.markDirty();
             queuePlayerSync(playerId);
             return ErrorCodes.SUCCESS;
         }
@@ -284,6 +288,7 @@ public class CurrencyPlayerData {
                 for (BaseCurrency currency : CurrencyData.SERVER.currencies) {
                     list.add(new PlayerCurrency(currency.copy(), currency.getDefaultValue()));
                 }
+                DataStorageManager.markDirty();
                 return list;
             });
         }

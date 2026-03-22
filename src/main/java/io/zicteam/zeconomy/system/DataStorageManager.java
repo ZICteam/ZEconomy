@@ -16,6 +16,7 @@ import java.sql.Statement;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
@@ -39,6 +40,9 @@ public final class DataStorageManager {
     });
     private static final AtomicReference<PendingSave> PENDING_SAVE = new AtomicReference<>();
     private static final AtomicBoolean SAVE_WORKER_RUNNING = new AtomicBoolean(false);
+    private static final AtomicLong CHANGE_VERSION = new AtomicLong(0L);
+    private static final AtomicLong LAST_SAVED_VERSION = new AtomicLong(0L);
+    private static final AtomicLong QUEUED_SAVE_VERSION = new AtomicLong(0L);
 
     private DataStorageManager() {
     }
@@ -56,16 +60,20 @@ public final class DataStorageManager {
             ZEconomy.printStackTrace("Failed to load storage mode '" + mode.id + "', fallback to nbt", e);
             loadFromNbt(server);
         }
+        resetDirtyState();
     }
 
     public static void saveAll(MinecraftServer server) {
         StorageMode mode = StorageMode.fromConfig(EconomyConfig.STORAGE_MODE.get());
+        long targetVersion = CHANGE_VERSION.get();
         try {
             writeSnapshot(mode, createSnapshot(server));
+            markSaved(targetVersion);
         } catch (Exception e) {
             ZEconomy.printStackTrace("Failed to save storage mode '" + mode.id + "', fallback to nbt", e);
             try {
                 writeSnapshot(StorageMode.NBT, createSnapshot(server));
+                markSaved(targetVersion);
             } catch (Exception fallbackError) {
                 ZEconomy.printStackTrace("Failed to save nbt fallback", fallbackError);
             }
@@ -73,13 +81,26 @@ public final class DataStorageManager {
     }
 
     public static void scheduleSave(MinecraftServer server) {
+        long targetVersion = CHANGE_VERSION.get();
+        if (targetVersion <= LAST_SAVED_VERSION.get() || targetVersion <= QUEUED_SAVE_VERSION.get()) {
+            return;
+        }
         StorageMode mode = StorageMode.fromConfig(EconomyConfig.STORAGE_MODE.get());
         try {
-            PENDING_SAVE.set(new PendingSave(mode, createSnapshot(server)));
+            PENDING_SAVE.set(new PendingSave(mode, createSnapshot(server), targetVersion));
+            QUEUED_SAVE_VERSION.accumulateAndGet(targetVersion, Math::max);
             ensureSaveWorker();
         } catch (Exception e) {
             ZEconomy.printStackTrace("Failed to prepare async save for storage mode '" + mode.id + "'", e);
         }
+    }
+
+    public static void markDirty() {
+        CHANGE_VERSION.incrementAndGet();
+    }
+
+    public static boolean isDirty() {
+        return CHANGE_VERSION.get() > LAST_SAVED_VERSION.get();
     }
 
     private static void loadFromNbt(MinecraftServer server) {
@@ -294,12 +315,14 @@ public final class DataStorageManager {
                 while ((pending = PENDING_SAVE.getAndSet(null)) != null) {
                     try {
                         writeSnapshot(pending.mode(), pending.snapshot());
+                        markSaved(pending.changeVersion());
                     } catch (Exception e) {
                         ZEconomy.printStackTrace("Failed to write async snapshot for storage mode '" + pending.mode().id + "'", e);
                     }
                 }
             } finally {
                 SAVE_WORKER_RUNNING.set(false);
+                QUEUED_SAVE_VERSION.set(LAST_SAVED_VERSION.get());
                 if (PENDING_SAVE.get() != null) {
                     ensureSaveWorker();
                 }
@@ -336,6 +359,19 @@ public final class DataStorageManager {
         CurrencyPlayerData.SERVER.server = server;
         CustomPlayerData.SERVER = new CustomPlayerData.Server();
         ZEconomy.EXTRA_DATA = new ExtraEconomyData();
+        resetDirtyState();
+    }
+
+    private static void markSaved(long version) {
+        LAST_SAVED_VERSION.accumulateAndGet(version, Math::max);
+        QUEUED_SAVE_VERSION.accumulateAndGet(LAST_SAVED_VERSION.get(), Math::max);
+    }
+
+    private static void resetDirtyState() {
+        long version = CHANGE_VERSION.get();
+        LAST_SAVED_VERSION.set(version);
+        QUEUED_SAVE_VERSION.set(version);
+        PENDING_SAVE.set(null);
     }
 
     private static Path rootDataDir(MinecraftServer server) {
@@ -351,7 +387,7 @@ public final class DataStorageManager {
     ) {
     }
 
-    private record PendingSave(StorageMode mode, StorageSnapshot snapshot) {
+    private record PendingSave(StorageMode mode, StorageSnapshot snapshot, long changeVersion) {
     }
 
     private enum StorageMode {

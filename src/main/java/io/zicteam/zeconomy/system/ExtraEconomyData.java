@@ -103,12 +103,14 @@ public class ExtraEconomyData {
 
     public void setRate(String from, String to, double rate) {
         exchangeRates.put(rateKey(from, to), Math.max(0.0, rate));
+        DataStorageManager.markDirty();
         ZEconomyApiEvents.post(new RateChangeEvent(RateChangeEvent.Action.SET, from, to, Math.max(0.0, rate)));
     }
 
     public boolean removeRate(String from, String to) {
         boolean removed = exchangeRates.remove(rateKey(from, to)) != null;
         if (removed) {
+            DataStorageManager.markDirty();
             ZEconomyApiEvents.post(new RateChangeEvent(RateChangeEvent.Action.REMOVE, from, to, 0.0D));
         }
         return removed;
@@ -119,7 +121,11 @@ public class ExtraEconomyData {
     }
 
     public void clearRates() {
+        if (exchangeRates.isEmpty()) {
+            return;
+        }
         exchangeRates.clear();
+        DataStorageManager.markDirty();
         ZEconomyApiEvents.post(new RateChangeEvent(RateChangeEvent.Action.RESET, "", "", 0.0D));
     }
 
@@ -189,8 +195,7 @@ public class ExtraEconomyData {
             CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, -amount);
             CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), currency, amount);
         });
-        bankDeposits.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>()).merge(currency, amount, Double::sum);
-        adjustBankTotal(currency, amount);
+        setBankDeposit(player.getUUID(), currency, getDeposited(player.getUUID(), currency) + amount);
         lastHourlyPayoutEpochSec.putIfAbsent(player.getUUID(), Instant.now().getEpochSecond());
         log("BANK_DEPOSIT", player.getUUID(), null, currency, amount, 0.0, "");
         ZEconomyApiEvents.post(new BankTransactionEvent(BankTransactionEvent.Action.DEPOSIT, player.getUUID(), currency, amount, getDeposited(player.getUUID(), currency)));
@@ -202,18 +207,14 @@ public class ExtraEconomyData {
         if (amount <= 0) {
             return false;
         }
-        Map<String, Double> account = bankDeposits.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>());
-        double deposited = account.getOrDefault(currency, 0.0);
+        double deposited = getDeposited(player.getUUID(), currency);
         if (deposited < amount) {
             return false;
         }
-        double reservedBefore = getTotalBankDeposits(currency);
-        double serverBalance = CurrencyHelper.getPlayerCurrencyServerData().getBalance(CurrencyHelper.getServerAccountUUID(), currency).value;
-        if (serverBalance < amount || serverBalance - (reservedBefore - amount) < 0.0D) {
+        if (getServerSpendableBalance(currency) < amount) {
             return false;
         }
-        account.put(currency, deposited - amount);
-        adjustBankTotal(currency, -amount);
+        setBankDeposit(player.getUUID(), currency, deposited - amount);
         CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() -> {
             CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), currency, -amount);
             CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, amount);
@@ -234,6 +235,7 @@ public class ExtraEconomyData {
             }
         }
         vaultPins.put(playerId, pin);
+        DataStorageManager.markDirty();
         ZEconomyApiEvents.post(new VaultTransactionEvent(VaultTransactionEvent.Action.PIN_SET, playerId, "", 0.0D, 0.0D));
         return true;
     }
@@ -253,7 +255,7 @@ public class ExtraEconomyData {
         CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() ->
             CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, -amount)
         );
-        vaultDeposits.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>()).merge(currency, amount, Double::sum);
+        setVaultDeposit(player.getUUID(), currency, getVaultBalance(player.getUUID(), currency) + amount);
         log("VAULT_DEPOSIT", player.getUUID(), null, currency, amount, 0.0, "");
         ZEconomyApiEvents.post(new VaultTransactionEvent(VaultTransactionEvent.Action.DEPOSIT, player.getUUID(), currency, amount, getVaultBalance(player.getUUID(), currency)));
         syncPlayerMirror(player);
@@ -264,12 +266,11 @@ public class ExtraEconomyData {
         if (!checkPin(player.getUUID(), pin) || amount <= 0) {
             return false;
         }
-        Map<String, Double> account = vaultDeposits.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>());
-        double current = account.getOrDefault(currency, 0.0);
+        double current = getVaultBalance(player.getUUID(), currency);
         if (current < amount) {
             return false;
         }
-        account.put(currency, current - amount);
+        setVaultDeposit(player.getUUID(), currency, current - amount);
         CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() ->
             CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, amount)
         );
@@ -308,6 +309,7 @@ public class ExtraEconomyData {
             state.streak = 1;
         }
         state.lastClaimDay = today;
+        DataStorageManager.markDirty();
         CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() -> {
             CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), ZEconomy.PRIMARY_CURRENCY_ID, -zReward);
             CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), ZEconomy.SECONDARY_CURRENCY_ID, -bReward);
@@ -330,7 +332,13 @@ public class ExtraEconomyData {
             return;
         }
         nextInterestSweepEpochSec = now + 30L;
+        boolean mutated = false;
         long interval = 3600L;
+        double rate = EconomyConfig.HOURLY_INTEREST_RATE.get();
+        if (rate <= 0.0D) {
+            return;
+        }
+        Map<String, Double> spendableByCurrency = new HashMap<>();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             UUID id = player.getUUID();
             long last = lastHourlyPayoutEpochSec.getOrDefault(id, now);
@@ -338,24 +346,41 @@ public class ExtraEconomyData {
                 continue;
             }
             Map<String, Double> account = bankDeposits.getOrDefault(id, Map.of());
-            double rate = EconomyConfig.HOURLY_INTEREST_RATE.get();
+            Map<String, Double> payouts = new HashMap<>();
             for (Map.Entry<String, Double> entry : account.entrySet()) {
                 if (entry.getValue() <= 0) {
                     continue;
                 }
                 double payout = entry.getValue() * rate;
-                if (getServerSpendableBalance(entry.getKey()) < payout) {
+                if (payout <= 0.0D) {
                     continue;
                 }
+                double spendable = spendableByCurrency.computeIfAbsent(entry.getKey(), this::getServerSpendableBalance);
+                if (spendable < payout) {
+                    continue;
+                }
+                payouts.put(entry.getKey(), payout);
+                spendableByCurrency.put(entry.getKey(), spendable - payout);
+            }
+            if (!payouts.isEmpty()) {
                 CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() -> {
-                    CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), entry.getKey(), -payout);
-                    CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, entry.getKey(), payout);
+                    for (Map.Entry<String, Double> payoutEntry : payouts.entrySet()) {
+                        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), payoutEntry.getKey(), -payoutEntry.getValue());
+                        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, payoutEntry.getKey(), payoutEntry.getValue());
+                    }
                 });
-                log("BANK_INTEREST", id, null, entry.getKey(), payout, 0.0, "");
-                ZEconomyApiEvents.post(new BankTransactionEvent(BankTransactionEvent.Action.INTEREST, id, entry.getKey(), payout, getDeposited(id, entry.getKey())));
+                for (Map.Entry<String, Double> payoutEntry : payouts.entrySet()) {
+                    log("BANK_INTEREST", id, null, payoutEntry.getKey(), payoutEntry.getValue(), 0.0, "");
+                    ZEconomyApiEvents.post(new BankTransactionEvent(BankTransactionEvent.Action.INTEREST, id, payoutEntry.getKey(), payoutEntry.getValue(), getDeposited(id, payoutEntry.getKey())));
+                }
+                syncPlayerMirror(player);
+                mutated = true;
             }
             lastHourlyPayoutEpochSec.put(id, now);
-            syncPlayerMirror(player);
+            mutated = true;
+        }
+        if (mutated) {
+            DataStorageManager.markDirty();
         }
     }
 
@@ -413,6 +438,7 @@ public class ExtraEconomyData {
             return;
         }
         mailbox.computeIfAbsent(target, ignored -> new ArrayList<>()).add(stack.copy());
+        DataStorageManager.markDirty();
         log("MAIL_SEND", null, target, "item", stack.getCount(), 0.0, stack.getItem().toString());
     }
 
@@ -420,6 +446,7 @@ public class ExtraEconomyData {
         List<ItemStack> items = mailbox.remove(playerId);
         int count = items == null ? 0 : items.size();
         if (count > 0) {
+            DataStorageManager.markDirty();
             log("MAIL_CLAIM", playerId, null, "item", count, 0.0, "");
         }
         return items == null ? List.of() : items;
@@ -454,6 +481,7 @@ public class ExtraEconomyData {
         data.nbt.putInt("mail_pending", pendingMailCount(player.getUUID()));
         data.nbt.putInt("daily_streak", getDailyStreak(player.getUUID()));
         data.nbt.putBoolean("vault_has_pin", hasVaultPin(player.getUUID()));
+        DataStorageManager.markDirty();
     }
 
     public List<TransactionRecord> getRecentLogs(int limit) {
@@ -524,6 +552,64 @@ public class ExtraEconomyData {
             return;
         }
         bankTotalsByCurrency.put(currency, next);
+    }
+
+    // Keep per-player deposits and per-currency reserved totals in sync through one code path.
+    private void setBankDeposit(UUID playerId, String currency, double amount) {
+        if (playerId == null || currency == null || currency.isBlank()) {
+            return;
+        }
+        Map<String, Double> account = bankDeposits.get(playerId);
+        double previous = account == null ? 0.0D : account.getOrDefault(currency, 0.0D);
+        double next = Math.max(0.0D, amount);
+        if (Double.compare(previous, next) == 0) {
+            return;
+        }
+        if (account == null && next > 0.0D) {
+            account = new HashMap<>();
+            bankDeposits.put(playerId, account);
+        }
+        if (next <= 0.0D) {
+            if (account == null) {
+                return;
+            }
+            account.remove(currency);
+            if (account.isEmpty()) {
+                bankDeposits.remove(playerId);
+            }
+        } else {
+            account.put(currency, next);
+        }
+        adjustBankTotal(currency, next - previous);
+        DataStorageManager.markDirty();
+    }
+
+    private void setVaultDeposit(UUID playerId, String currency, double amount) {
+        if (playerId == null || currency == null || currency.isBlank()) {
+            return;
+        }
+        Map<String, Double> account = vaultDeposits.get(playerId);
+        double previous = account == null ? 0.0D : account.getOrDefault(currency, 0.0D);
+        double next = Math.max(0.0D, amount);
+        if (Double.compare(previous, next) == 0) {
+            return;
+        }
+        if (account == null && next > 0.0D) {
+            account = new HashMap<>();
+            vaultDeposits.put(playerId, account);
+        }
+        if (next <= 0.0D) {
+            if (account == null) {
+                return;
+            }
+            account.remove(currency);
+            if (account.isEmpty()) {
+                vaultDeposits.remove(playerId);
+            }
+        } else {
+            account.put(currency, next);
+        }
+        DataStorageManager.markDirty();
     }
 
     private void rebuildCaches() {

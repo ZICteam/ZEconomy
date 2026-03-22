@@ -14,21 +14,21 @@ final class UserCommandTree {
 
     static void append(LiteralArgumentBuilder<CommandSourceStack> root) {
         root.then(Commands.literal("help")
-            .executes(ctx -> EconomyCommands.showHelp(ctx.getSource())));
+            .executes(ctx -> UserEconomyCommands.showHelp(ctx.getSource())));
 
         root.then(Commands.literal("balance")
             .requires(src -> EconomyCommands.hasUserPermission(src, ModPermissions.COMMAND_BALANCE))
-            .executes(ctx -> EconomyCommands.showBalance(ctx.getSource(), ctx.getSource().getPlayerOrException()))
+            .executes(ctx -> UserEconomyCommands.showBalance(ctx.getSource(), ctx.getSource().getPlayerOrException()))
             .then(Commands.argument("player", EntityArgument.player())
                 .requires(src -> EconomyCommands.hasAdminPermission(src, ModPermissions.ADMIN_SET))
-                .executes(ctx -> EconomyCommands.showBalance(ctx.getSource(), EntityArgument.getPlayer(ctx, "player")))));
+                .executes(ctx -> UserEconomyCommands.showBalance(ctx.getSource(), EntityArgument.getPlayer(ctx, "player")))));
 
         root.then(Commands.literal("pay")
             .requires(src -> EconomyCommands.hasUserPermission(src, ModPermissions.COMMAND_PAY))
             .then(Commands.argument("player", EntityArgument.player())
                 .then(Commands.argument("currency", StringArgumentType.word())
                     .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.0001D))
-                        .executes(ctx -> EconomyCommands.pay(
+                        .executes(ctx -> UserEconomyCommands.pay(
                             ctx.getSource().getPlayerOrException(),
                             EntityArgument.getPlayer(ctx, "player"),
                             StringArgumentType.getString(ctx, "currency"),
@@ -39,45 +39,45 @@ final class UserCommandTree {
             .then(Commands.literal("deposit")
                 .then(Commands.argument("currency", StringArgumentType.word())
                     .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.0001D))
-                        .executes(ctx -> EconomyCommands.bankDeposit(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "currency"), DoubleArgumentType.getDouble(ctx, "amount"))))))
+                        .executes(ctx -> UserEconomyCommands.bankDeposit(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "currency"), DoubleArgumentType.getDouble(ctx, "amount"))))))
             .then(Commands.literal("withdraw")
                 .then(Commands.argument("currency", StringArgumentType.word())
                     .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.0001D))
-                        .executes(ctx -> EconomyCommands.bankWithdraw(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "currency"), DoubleArgumentType.getDouble(ctx, "amount"))))))
-            .then(Commands.literal("info").executes(ctx -> EconomyCommands.bankInfo(ctx.getSource().getPlayerOrException()))));
+                        .executes(ctx -> UserEconomyCommands.bankWithdraw(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "currency"), DoubleArgumentType.getDouble(ctx, "amount"))))))
+            .then(Commands.literal("info").executes(ctx -> UserEconomyCommands.bankInfo(ctx.getSource().getPlayerOrException()))));
 
         LiteralArgumentBuilder<CommandSourceStack> exchangeCmd = Commands.literal("exchange")
             .requires(src -> EconomyCommands.hasUserPermission(src, ModPermissions.COMMAND_EXCHANGE))
             .then(Commands.argument("from", StringArgumentType.word())
                 .then(Commands.argument("to", StringArgumentType.word())
-                    .executes(ctx -> EconomyCommands.showRate(
+                    .executes(ctx -> UserEconomyCommands.showRate(
                         ctx.getSource(),
                         StringArgumentType.getString(ctx, "from"),
                         StringArgumentType.getString(ctx, "to")))
                     .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.0001D))
-                        .executes(ctx -> EconomyCommands.exchangeCurrency(
+                        .executes(ctx -> UserEconomyCommands.exchangeCurrency(
                             ctx.getSource().getPlayerOrException(),
                             StringArgumentType.getString(ctx, "from"),
                             StringArgumentType.getString(ctx, "to"),
                             DoubleArgumentType.getDouble(ctx, "amount"))))))
             .then(Commands.literal("rates")
-                .executes(ctx -> EconomyCommands.showRates(ctx.getSource())))
+                .executes(ctx -> UserEconomyCommands.showRates(ctx.getSource())))
             .then(Commands.literal("audit")
                 .requires(src -> EconomyCommands.hasAdminPermission(src, ModPermissions.ADMIN_EXCHANGE_RATE))
-                .executes(ctx -> EconomyCommands.auditRates(ctx.getSource())))
+                .executes(ctx -> UserEconomyCommands.auditRates(ctx.getSource())))
             .then(Commands.literal("resetrates")
                 .requires(src -> EconomyCommands.hasAdminPermission(src, ModPermissions.ADMIN_EXCHANGE_RATE))
-                .executes(ctx -> EconomyCommands.resetRates(ctx.getSource())))
+                .executes(ctx -> UserEconomyCommands.resetRates(ctx.getSource())))
             .then(Commands.literal("rate")
                 .requires(src -> EconomyCommands.hasAdminPermission(src, ModPermissions.ADMIN_EXCHANGE_RATE))
                 .then(Commands.argument("from", StringArgumentType.word())
                     .then(Commands.argument("to", StringArgumentType.word())
-                        .executes(ctx -> EconomyCommands.showRate(
+                        .executes(ctx -> UserEconomyCommands.showRate(
                             ctx.getSource(),
                             StringArgumentType.getString(ctx, "from"),
                             StringArgumentType.getString(ctx, "to")))
                         .then(Commands.argument("rate", DoubleArgumentType.doubleArg(0.0001D))
-                            .executes(ctx -> EconomyCommands.setRate(
+                            .executes(ctx -> UserEconomyCommands.setRate(
                                 ctx.getSource(),
                                 StringArgumentType.getString(ctx, "from"),
                                 StringArgumentType.getString(ctx, "to"),
@@ -87,7 +87,7 @@ final class UserCommandTree {
             .then(Commands.argument("from", StringArgumentType.word())
                 .then(Commands.argument("to", StringArgumentType.word())
                     .then(Commands.argument("rate", DoubleArgumentType.doubleArg(0.0001D))
-                        .executes(ctx -> EconomyCommands.setRatePair(
+                        .executes(ctx -> UserEconomyCommands.setRatePair(
                             ctx.getSource(),
                             StringArgumentType.getString(ctx, "from"),
                             StringArgumentType.getString(ctx, "to"),
@@ -96,7 +96,7 @@ final class UserCommandTree {
             .requires(src -> EconomyCommands.hasAdminPermission(src, ModPermissions.ADMIN_EXCHANGE_RATE))
             .then(Commands.argument("from", StringArgumentType.word())
                 .then(Commands.argument("to", StringArgumentType.word())
-                    .executes(ctx -> EconomyCommands.clearRate(
+                    .executes(ctx -> UserEconomyCommands.clearRate(
                         ctx.getSource(),
                         StringArgumentType.getString(ctx, "from"),
                         StringArgumentType.getString(ctx, "to"))))));
@@ -104,10 +104,10 @@ final class UserCommandTree {
 
         root.then(Commands.literal("mail")
             .requires(src -> EconomyCommands.hasUserPermission(src, ModPermissions.COMMAND_MAIL))
-            .then(Commands.literal("claim").executes(ctx -> EconomyCommands.mailClaim(ctx.getSource().getPlayerOrException())))
+            .then(Commands.literal("claim").executes(ctx -> UserEconomyCommands.mailClaim(ctx.getSource().getPlayerOrException())))
             .then(Commands.literal("send")
                 .then(Commands.argument("player", EntityArgument.player())
-                    .executes(ctx -> EconomyCommands.mailSend(
+                    .executes(ctx -> UserEconomyCommands.mailSend(
                         ctx.getSource().getPlayerOrException(),
                         EntityArgument.getPlayer(ctx, "player"))))));
 
@@ -115,36 +115,36 @@ final class UserCommandTree {
             .requires(src -> EconomyCommands.hasUserPermission(src, ModPermissions.COMMAND_VAULT))
             .then(Commands.literal("setpin")
                 .then(Commands.argument("pin", StringArgumentType.word())
-                    .executes(ctx -> EconomyCommands.vaultSetPin(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "pin")))))
-            .then(Commands.literal("balance").executes(ctx -> EconomyCommands.vaultBalance(ctx.getSource().getPlayerOrException())))
+                    .executes(ctx -> UserEconomyCommands.vaultSetPin(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "pin")))))
+            .then(Commands.literal("balance").executes(ctx -> UserEconomyCommands.vaultBalance(ctx.getSource().getPlayerOrException())))
             .then(Commands.literal("deposit")
                 .then(Commands.argument("pin", StringArgumentType.word())
                     .then(Commands.argument("currency", StringArgumentType.word())
                         .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.0001D))
-                            .executes(ctx -> EconomyCommands.vaultDeposit(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "pin"), StringArgumentType.getString(ctx, "currency"), DoubleArgumentType.getDouble(ctx, "amount")))))))
+                            .executes(ctx -> UserEconomyCommands.vaultDeposit(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "pin"), StringArgumentType.getString(ctx, "currency"), DoubleArgumentType.getDouble(ctx, "amount")))))))
             .then(Commands.literal("withdraw")
                 .then(Commands.argument("pin", StringArgumentType.word())
                     .then(Commands.argument("currency", StringArgumentType.word())
                         .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.0001D))
-                            .executes(ctx -> EconomyCommands.vaultWithdraw(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "pin"), StringArgumentType.getString(ctx, "currency"), DoubleArgumentType.getDouble(ctx, "amount"))))))));
+                            .executes(ctx -> UserEconomyCommands.vaultWithdraw(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "pin"), StringArgumentType.getString(ctx, "currency"), DoubleArgumentType.getDouble(ctx, "amount"))))))));
 
         root.then(Commands.literal("daily")
             .requires(src -> EconomyCommands.hasUserPermission(src, ModPermissions.COMMAND_DAILY))
-            .then(Commands.literal("claim").executes(ctx -> EconomyCommands.dailyClaim(ctx.getSource().getPlayerOrException()))));
+            .then(Commands.literal("claim").executes(ctx -> UserEconomyCommands.dailyClaim(ctx.getSource().getPlayerOrException()))));
 
         root.then(Commands.literal("top")
             .requires(src -> EconomyCommands.hasUserPermission(src, ModPermissions.COMMAND_TOP))
             .then(Commands.argument("currency", StringArgumentType.word())
-                .executes(ctx -> EconomyCommands.showTop(ctx.getSource(), StringArgumentType.getString(ctx, "currency"))))
-            .executes(ctx -> EconomyCommands.showTop(ctx.getSource(), "z_coin")));
+                .executes(ctx -> UserEconomyCommands.showTop(ctx.getSource(), StringArgumentType.getString(ctx, "currency"))))
+            .executes(ctx -> UserEconomyCommands.showTop(ctx.getSource(), "z_coin")));
 
         root.then(Commands.literal("currencies")
             .requires(src -> EconomyCommands.hasUserPermission(src, ModPermissions.COMMAND_BALANCE))
-            .executes(ctx -> EconomyCommands.showCurrencies(ctx.getSource())));
+            .executes(ctx -> UserEconomyCommands.showCurrencies(ctx.getSource())));
 
         root.then(Commands.literal("status")
             .requires(src -> EconomyCommands.hasUserPermission(src, ModPermissions.COMMAND_BALANCE))
-            .executes(ctx -> EconomyCommands.showStatus(ctx.getSource())));
+            .executes(ctx -> UserEconomyCommands.showStatus(ctx.getSource())));
 
         root.then(Commands.literal("gui")
             .requires(src -> EconomyCommands.hasAdminPermission(src, ModPermissions.ADMIN_RELOAD))

@@ -59,7 +59,7 @@ public final class CurrencyAdminService {
         CurrencyRepairResult result = repairEntries(player.getUUID(), CurrencyPlayerData.SERVER.getPlayersCurrency(player));
         CurrencyHelper.syncPlayer(player);
         if (saveAfter && player.server != null) {
-            CurrencyHelper.saveAll(player.server);
+            CurrencyHelper.scheduleSave(player.server);
         }
         return result;
     }
@@ -160,7 +160,7 @@ public final class CurrencyAdminService {
             }
         }
         if (server != null) {
-            CurrencyHelper.saveAll(server);
+            CurrencyHelper.scheduleSave(server);
         }
         return new CurrencyBatchRepairResult(repairedPlayers, added, removed);
     }
@@ -180,7 +180,7 @@ public final class CurrencyAdminService {
                 CurrencyPlayerData.SERVER.newPlayer(player);
                 CurrencyHelper.syncPlayer(player);
             }
-            CurrencyHelper.saveAll(server);
+            CurrencyHelper.scheduleSave(server);
         }
         return new CurrencyBatchRepairResult(players, added, removed);
     }

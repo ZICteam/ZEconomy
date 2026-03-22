@@ -4,6 +4,46 @@ All notable changes to this project should be documented in this file.
 
 The format is based on keeping entries grouped by released mod version.
 
+## [1.3.4] - 2026-03-22
+
+### Improved
+
+- Added dirty-aware storage tracking in `DataStorageManager` so timer-based autosave skips snapshot work when no persistent economy state changed
+- Marked core wallet, bank, vault, rate, mail, and custom-data mutation paths as dirty to keep autosave aligned with actual runtime changes
+- Added version-based async save tracking so background writes do not incorrectly treat newer in-flight changes as already persisted
+
+## [1.3.3] - 2026-03-22
+
+### Improved
+
+- Added `CurrencyHelper.scheduleSave(...)` as a shared non-blocking save path for service-level maintenance operations
+- Switched reconcile, doctor-fix, and currency repair service flows from immediate synchronous saves to scheduled background saves where strict blocking persistence was not required
+- Reduced main-thread save pressure during admin maintenance and repair workflows
+
+## [1.3.2] - 2026-03-22
+
+### Improved
+
+- Reduced hourly bank interest overhead by caching spendable balances per currency during each sweep
+- Changed hourly interest payouts to use one bulk currency update per player instead of repeated per-currency bulk updates
+- Limited bank mirror syncs during hourly interest processing to players who actually received payouts
+
+## [1.3.1] - 2026-03-22
+
+### Improved
+
+- Centralized bank deposit mutations in `ExtraEconomyData` so cached reserved totals stay synchronized through one code path
+- Simplified bank withdrawal validation to use cached spendable balance directly instead of recomputing reserve transitions manually
+- Cleaned up zeroed bank deposit entries as part of the cache-backed update path
+
+## [1.3.0] - 2026-03-22
+
+### Changed
+
+- Extracted user economy handlers into [UserEconomyCommands.java](/Users/novaevent/Documents/CODEX/ZEconomy/src/main/java/io/zicteam/zeconomy/commands/UserEconomyCommands.java)
+- Moved wallet, bank, exchange, mail, vault, daily, help, and status user-facing workflows out of `EconomyCommands`
+- Completed the main Phase 1 handler split so the central command class now acts much more like a coordinator than a monolith
+
 ## [1.2.9] - 2026-03-22
 
 ### Changed
