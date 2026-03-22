@@ -44,6 +44,23 @@ public class CurrencyHelper {
         return ErrorCodes.SUCCESS;
     }
 
+    public static ErrorCodes refreshPlayerState(ServerPlayer player) {
+        if (player == null) {
+            return ErrorCodes.NOT_FOUND;
+        }
+        ZEconomy.EXTRA_DATA.syncPlayerMirror(player);
+        return syncPlayer(player);
+    }
+
+    public static void refreshPlayersState(ServerPlayer... players) {
+        if (players == null) {
+            return;
+        }
+        for (ServerPlayer player : players) {
+            refreshPlayerState(player);
+        }
+    }
+
     public static ErrorCodeStruct<CurrencyData> getCurrencyData(boolean client) {
         return getAllCurrency(client);
     }
@@ -185,7 +202,7 @@ public class CurrencyHelper {
     }
 
     public static void syncCustomData(ServerPlayer player) {
-        ZEconomyNetwork.syncPlayer(player);
+        syncPlayer(player);
     }
 
     public static ErrorCodes updateCustomData(ServerPlayer player, Consumer<CompoundTag> consumer) {

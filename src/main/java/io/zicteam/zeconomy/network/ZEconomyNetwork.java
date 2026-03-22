@@ -159,8 +159,7 @@ public class ZEconomyNetwork {
                     for (ItemStack stack : ZEconomy.EXTRA_DATA.claimMail(player.getUUID())) {
                         InventoryUtils.giveItem(player, stack);
                     }
-                    ZEconomy.EXTRA_DATA.syncPlayerMirror(player);
-                    syncPlayer(player);
+                    CurrencyHelper.refreshPlayerState(player);
                     return;
                 }
                 if (!"MAILBOX_SEND".equals(payload.action)) {
@@ -193,10 +192,7 @@ public class ZEconomyNetwork {
                 if (sent > 0) {
                     player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.zeconomy.mailbox.sent", sent, target.getName().getString()));
                     target.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.zeconomy.mailbox.received", player.getName().getString()));
-                    ZEconomy.EXTRA_DATA.syncPlayerMirror(target);
-                    ZEconomy.EXTRA_DATA.syncPlayerMirror(player);
-                    syncPlayer(target);
-                    syncPlayer(player);
+                    CurrencyHelper.refreshPlayersState(target, player);
                 }
             });
             context.setPacketHandled(true);
@@ -250,8 +246,7 @@ public class ZEconomyNetwork {
                     default -> {
                     }
                 }
-                ZEconomy.EXTRA_DATA.syncPlayerMirror(player);
-                syncPlayer(player);
+                CurrencyHelper.refreshPlayerState(player);
             });
             context.setPacketHandled(true);
         }

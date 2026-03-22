@@ -29,6 +29,7 @@ import io.zicteam.zeconomy.currencies.BaseCurrency;
 import io.zicteam.zeconomy.currencies.compat.VaultBridge;
 import io.zicteam.zeconomy.currencies.data.CurrencyData;
 import io.zicteam.zeconomy.currencies.data.CurrencyPlayerData;
+import io.zicteam.zeconomy.system.EconomyOperationService;
 import io.zicteam.zeconomy.system.ExtraEconomyData;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
 import io.zicteam.zeconomy.utils.ErrorCodes;
@@ -246,13 +247,9 @@ final class ZEconomyApiImpl implements ZEconomyApi {
         if (from == null || to == null) {
             return ApiResult.failure(ApiErrorCode.PLAYER_OFFLINE, "Transfer requires online players");
         }
-        if (!ZEconomy.EXTRA_DATA.transferWithFee(from, to, currencyId, amount)) {
+        if (!EconomyOperationService.transfer(from, to, currencyId, amount)) {
             return ApiResult.failure(ApiErrorCode.INSUFFICIENT_FUNDS, "Transfer failed");
         }
-        ZEconomy.EXTRA_DATA.syncPlayerMirror(from);
-        ZEconomy.EXTRA_DATA.syncPlayerMirror(to);
-        CurrencyHelper.syncPlayer(from);
-        CurrencyHelper.syncPlayer(to);
         return ApiResult.success(CurrencyHelper.getPlayerCurrencyServerData().getBalance(fromPlayerId, currencyId).value);
     }
 
@@ -271,10 +268,9 @@ final class ZEconomyApiImpl implements ZEconomyApi {
         if (player == null) {
             return ApiResult.failure(ApiErrorCode.PLAYER_OFFLINE, "Bank operations require online player");
         }
-        if (!ZEconomy.EXTRA_DATA.depositToBank(player, currencyId, amount)) {
+        if (!EconomyOperationService.depositBank(player, currencyId, amount)) {
             return ApiResult.failure(ApiErrorCode.INSUFFICIENT_FUNDS, "Bank deposit failed");
         }
-        CurrencyHelper.syncCustomData(player);
         return ApiResult.success(ZEconomy.EXTRA_DATA.getDeposited(playerId, currencyId));
     }
 
@@ -293,10 +289,9 @@ final class ZEconomyApiImpl implements ZEconomyApi {
         if (player == null) {
             return ApiResult.failure(ApiErrorCode.PLAYER_OFFLINE, "Bank operations require online player");
         }
-        if (!ZEconomy.EXTRA_DATA.withdrawFromBank(player, currencyId, amount)) {
+        if (!EconomyOperationService.withdrawBank(player, currencyId, amount)) {
             return ApiResult.failure(ApiErrorCode.INSUFFICIENT_FUNDS, "Bank withdraw failed");
         }
-        CurrencyHelper.syncCustomData(player);
         return ApiResult.success(ZEconomy.EXTRA_DATA.getDeposited(playerId, currencyId));
     }
 
@@ -330,10 +325,9 @@ final class ZEconomyApiImpl implements ZEconomyApi {
         if (player == null) {
             return ApiResult.failure(ApiErrorCode.PLAYER_OFFLINE, "Vault operations require online player");
         }
-        if (!ZEconomy.EXTRA_DATA.vaultDeposit(player, pin, currencyId, amount)) {
+        if (!EconomyOperationService.depositVault(player, pin, currencyId, amount)) {
             return ApiResult.failure(ApiErrorCode.OPERATION_FAILED, "Vault deposit failed");
         }
-        CurrencyHelper.syncCustomData(player);
         return ApiResult.success(ZEconomy.EXTRA_DATA.getVaultBalance(playerId, currencyId));
     }
 
@@ -352,10 +346,9 @@ final class ZEconomyApiImpl implements ZEconomyApi {
         if (player == null) {
             return ApiResult.failure(ApiErrorCode.PLAYER_OFFLINE, "Vault operations require online player");
         }
-        if (!ZEconomy.EXTRA_DATA.vaultWithdraw(player, pin, currencyId, amount)) {
+        if (!EconomyOperationService.withdrawVault(player, pin, currencyId, amount)) {
             return ApiResult.failure(ApiErrorCode.OPERATION_FAILED, "Vault withdraw failed");
         }
-        CurrencyHelper.syncCustomData(player);
         return ApiResult.success(ZEconomy.EXTRA_DATA.getVaultBalance(playerId, currencyId));
     }
 
@@ -368,11 +361,10 @@ final class ZEconomyApiImpl implements ZEconomyApi {
         if (player == null) {
             return ApiResult.failure(ApiErrorCode.PLAYER_OFFLINE, "Daily reward requires online player");
         }
-        ExtraEconomyData.DailyClaimResult result = ZEconomy.EXTRA_DATA.claimDaily(player);
+        ExtraEconomyData.DailyClaimResult result = EconomyOperationService.claimDaily(player);
         if (!result.success()) {
             return ApiResult.failure(ApiErrorCode.TREASURY_INSUFFICIENT_FUNDS, "Daily reward not available");
         }
-        CurrencyHelper.syncCustomData(player);
         return ApiResult.success(new DailyRewardView(result.success(), result.zReward(), result.bReward(), result.streak()));
     }
 
@@ -394,10 +386,9 @@ final class ZEconomyApiImpl implements ZEconomyApi {
         if (player == null) {
             return ApiResult.failure(ApiErrorCode.PLAYER_OFFLINE, "Exchange requires online player");
         }
-        if (!ZEconomy.EXTRA_DATA.exchangeCurrency(player, fromCurrencyId, toCurrencyId, amount)) {
+        if (!EconomyOperationService.exchange(player, fromCurrencyId, toCurrencyId, amount)) {
             return ApiResult.failure(ApiErrorCode.OPERATION_FAILED, "Exchange failed");
         }
-        CurrencyHelper.syncCustomData(player);
         return ApiResult.success(CurrencyHelper.getPlayerCurrencyServerData().getBalance(playerId, toCurrencyId).value);
     }
 
@@ -515,16 +506,7 @@ final class ZEconomyApiImpl implements ZEconomyApi {
     }
 
     private void syncIfOnline(UUID playerId) {
-        ServerPlayer player = onlinePlayer(playerId);
-        if (player == null) {
-            return;
-        }
-        if (!CurrencyHelper.isServerAccount(playerId)) {
-            CustomPlayerData.SERVER.createData(player);
-            ZEconomy.EXTRA_DATA.syncPlayerMirror(player);
-            CurrencyHelper.syncCustomData(player);
-        }
-        CurrencyHelper.syncPlayer(player);
+        EconomyOperationService.syncIfOnline(playerId);
     }
 
     private String playerName(MinecraftServer server, UUID playerId) {
