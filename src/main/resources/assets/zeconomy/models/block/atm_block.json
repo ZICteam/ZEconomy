@@ -1,0 +1,11 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "down": "zeconomy:block/atm_bottom",
+    "up": "zeconomy:block/atm_top",
+    "north": "zeconomy:block/atm_front",
+    "south": "zeconomy:block/atm_side",
+    "west": "zeconomy:block/atm_side",
+    "east": "zeconomy:block/atm_side"
+  }
+}

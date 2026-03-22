@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "zeconomy:block/mailbox_block"
+    }
+  }
+}

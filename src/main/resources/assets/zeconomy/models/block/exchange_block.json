@@ -1,0 +1,11 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "down": "zeconomy:block/exchange_bottom",
+    "up": "zeconomy:block/exchange_top",
+    "north": "zeconomy:block/exchange_front",
+    "south": "zeconomy:block/exchange_side",
+    "west": "zeconomy:block/exchange_side",
+    "east": "zeconomy:block/exchange_side"
+  }
+}

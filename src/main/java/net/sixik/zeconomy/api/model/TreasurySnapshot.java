@@ -1,0 +1,4 @@
+package net.sixik.zeconomy.api.model;
+
+public record TreasurySnapshot(String currencyId, double totalBalance, double reservedBalance, double spendableBalance) {
+}

@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "zeconomy:item/bank_npc_spawner"
+  }
+}

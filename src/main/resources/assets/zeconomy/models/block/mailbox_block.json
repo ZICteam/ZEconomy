@@ -1,0 +1,11 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "down": "zeconomy:block/mailbox_bottom",
+    "up": "zeconomy:block/mailbox_top",
+    "north": "zeconomy:block/mailbox_front",
+    "south": "zeconomy:block/mailbox_side",
+    "west": "zeconomy:block/mailbox_side",
+    "east": "zeconomy:block/mailbox_side"
+  }
+}
