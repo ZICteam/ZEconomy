@@ -4,10 +4,10 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.sixik.zeconomy.api.ZEconomyApi;
-import net.sixik.zeconomy.api.ZEconomyApiProvider;
-import net.sixik.zeconomy.api.event.BalanceChangeEvent;
-import net.sixik.zeconomy.api.event.DailyRewardEvent;
+import io.zicteam.zeconomy.api.ZEconomyApi;
+import io.zicteam.zeconomy.api.ZEconomyApiProvider;
+import io.zicteam.zeconomy.api.event.BalanceChangeEvent;
+import io.zicteam.zeconomy.api.event.DailyRewardEvent;
 
 @Mod("example_zeconomy_addon")
 public final class ExampleEconomyAddon {

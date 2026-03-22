@@ -8,7 +8,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
-import net.sixik.zeconomy.api.ZEconomyApi;
+import io.zicteam.zeconomy.api.ZEconomyApi;
 
 public final class ExampleEconomyCommands {
     private ExampleEconomyCommands() {

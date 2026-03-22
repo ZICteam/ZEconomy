@@ -27,7 +27,7 @@ Windows:
 
 ## Style
 
-- Keep package naming under `net.sixik.zeconomy`
+- Keep package naming under `io.zicteam.zeconomy`
 - Prefer small, explicit changes
 - Do not add compatibility shims unless they are intentionally required
-- Keep public API changes documented in `API.md`
+- Keep public API changes documented in `README.md` and `examples/integration-example/README.md`

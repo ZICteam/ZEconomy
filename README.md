@@ -25,7 +25,7 @@ It provides:
   - `mysql`
 - Runtime GUI layout configs
 - Export of economy snapshot data
-- Integration-oriented API in `net.sixik.zeconomy.api`
+- Integration-oriented API in `io.zicteam.zeconomy.api`
 
 ## Requirements
 
@@ -65,27 +65,26 @@ Eclipse:
 
 ## Project Layout
 
-- `src/main/java/net/sixik/zeconomy` - mod source
+- `src/main/java/io/zicteam/zeconomy` - mod source
 - `src/main/resources` - assets, recipes, metadata
 - `examples/integration-example` - example addon integration
-- `API.md` - public API overview and examples
 
 ## Public API
 
 The stable integration surface is exposed through:
 
-- `net.sixik.zeconomy.api.ZEconomyApi`
-- `net.sixik.zeconomy.api.ZEconomyApiProvider`
-- `net.sixik.zeconomy.api.event.*`
+- `io.zicteam.zeconomy.api.ZEconomyApi`
+- `io.zicteam.zeconomy.api.ZEconomyApiProvider`
+- `io.zicteam.zeconomy.api.event.*`
 
 Quick example:
 
 ```java
-var api = net.sixik.zeconomy.api.ZEconomyApiProvider.get();
+var api = io.zicteam.zeconomy.api.ZEconomyApiProvider.get();
 var snapshot = api.getPlayerSnapshot(playerUuid);
 ```
 
-See [API.md](/z:/My_mods/ZEconomy/API.md) for more examples.
+See [examples/integration-example/README.md](/z:/My_mods/ZEconomy/examples/integration-example/README.md) for addon-oriented examples.
 
 ## Commands
 
