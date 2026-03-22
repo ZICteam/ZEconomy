@@ -33,6 +33,25 @@ It provides:
 - Forge `47.x`
 - Java `17`
 
+## Installation
+
+1. Build the mod or take the packaged jar from `build/libs/Z_Economy.jar`.
+2. Put the jar into the server `mods` folder.
+3. Start the server once to generate config files.
+4. Edit the generated config if needed.
+5. Restart the server fully after config changes.
+
+Main config locations:
+
+- `config/zeconomy-common.toml`
+- `world/serverconfig/zeconomy`
+
+For hybrid servers with plugin support:
+
+- install `Vault`
+- install a Vault economy provider such as `EssentialsX Economy`
+- enable the Vault bridge in the config
+
 ## Build
 
 ```bash
@@ -68,6 +87,7 @@ Eclipse:
 - `src/main/java/io/zicteam/zeconomy` - mod source
 - `src/main/resources` - assets, recipes, metadata
 - `examples/integration-example` - example addon integration
+- `API.md` - public API overview
 
 ## Public API
 
@@ -84,7 +104,7 @@ var api = io.zicteam.zeconomy.api.ZEconomyApiProvider.get();
 var snapshot = api.getPlayerSnapshot(playerUuid);
 ```
 
-See [examples/integration-example/README.md](/z:/My_mods/ZEconomy/examples/integration-example/README.md) for addon-oriented examples.
+See [API.md](/z:/My_mods/ZEconomy/API.md) for the API surface and [examples/integration-example/README.md](/z:/My_mods/ZEconomy/examples/integration-example/README.md) for addon-oriented examples.
 
 ## Commands
 
@@ -95,10 +115,60 @@ Main command root:
 Examples:
 
 - `/zeco balance`
+- `/zeco balance <player>`
+- `/zeco pay <player> <currency> <amount>`
 - `/zeco bank info`
+- `/zeco bank deposit <currency> <amount>`
+- `/zeco bank withdraw <currency> <amount>`
+- `/zeco exchange <from> <to> <amount>`
+- `/zeco exchange rates`
+- `/zeco mail claim`
+- `/zeco mail send <player>`
+- `/zeco vault setpin <pin>`
+- `/zeco vault balance`
+- `/zeco vault deposit <pin> <currency> <amount>`
+- `/zeco vault withdraw <pin> <currency> <amount>`
 - `/zeco daily claim`
 - `/zeco top z_coin`
+- `/zeco currencies`
+- `/zeco status`
 - `/zeco server balance`
+
+Admin commands:
+
+- `/zeco reload`
+- `/zeco export now`
+- `/zeco logs [limit]`
+- `/zeco gui edit <target>`
+- `/zeco admin set <player> <currency> <amount>`
+- `/zeco admin currency ...`
+- `/zeco admin status`
+- `/zeco admin save`
+- `/zeco admin backup`
+- `/zeco admin reloadstorage`
+- `/zeco admin exportnow`
+- `/zeco admin exportstatus`
+- `/zeco admin doctor`
+- `/zeco admin doctorfix <player>`
+- `/zeco admin doctorfixall`
+- `/zeco admin inspect <player>`
+- `/zeco admin reconcile <player>`
+- `/zeco admin syncvault <player>`
+- `/zeco server set <currency> <amount>`
+- `/zeco server give <currency> <amount>`
+- `/zeco server take <currency> <amount>`
+- `/zeco exchangeblock set <pos> <input_item> <input_count> <output_item> <output_count>`
+
+## Storage
+
+Supported storage modes:
+
+- `nbt`
+- `json`
+- `sqlite`
+- `mysql`
+
+The configured storage mode controls where runtime data is written under `world/serverconfig/zeconomy`.
 
 ## Vault Bridge
 

@@ -30,4 +30,4 @@ Windows:
 - Keep package naming under `io.zicteam.zeconomy`
 - Prefer small, explicit changes
 - Do not add compatibility shims unless they are intentionally required
-- Keep public API changes documented in `README.md` and `examples/integration-example/README.md`
+- Keep public API changes documented in `README.md`, `API.md`, and `examples/integration-example/README.md`
