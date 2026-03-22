@@ -43,8 +43,11 @@ It provides:
 
 Main config locations:
 
-- `config/zeconomy-common.toml`
+- `config/zeconomy/zeconomy-common.toml`
+- `config/zeconomy/`
 - `world/serverconfig/zeconomy`
+
+The `config/zeconomy/` directory stores the common mod config and generated GUI layout files.
 
 For hybrid servers with plugin support:
 

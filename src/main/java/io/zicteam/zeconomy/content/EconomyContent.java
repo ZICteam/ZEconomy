@@ -1,5 +1,6 @@
 package io.zicteam.zeconomy.content;
 
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BlockItem;
@@ -31,8 +32,7 @@ import io.zicteam.zeconomy.menu.ExchangeMenu;
 import io.zicteam.zeconomy.menu.MailboxMenu;
 
 public final class EconomyContent {
-    private static final ResourceLocation CREATIVE_TAB_REGISTRY = new ResourceLocation("minecraft", "creative_mode_tab");
-    private static final ResourceLocation MAIN_TAB_ID = new ResourceLocation(ZEconomy.MOD_ID, "main");
+    private static final ResourceLocation MAIN_TAB_ID = ResourceLocation.fromNamespaceAndPath(ZEconomy.MOD_ID, "main");
     public static final DeferredRegister<Block> BLOCKS = DeferredRegister.create(ForgeRegistries.BLOCKS, ZEconomy.MOD_ID);
     public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, ZEconomy.MOD_ID);
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITY_TYPES = DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, ZEconomy.MOD_ID);
@@ -86,16 +86,12 @@ public final class EconomyContent {
     private EconomyContent() {
     }
 
-    private static boolean isCreativeTabRegistry(Object key) {
-        return String.valueOf(key).contains("minecraft:creative_mode_tab");
-    }
-
     @SubscribeEvent
     public static void onRegister(RegisterEvent event) {
-        if (!isCreativeTabRegistry(event.getRegistryKey())) {
+        if (!Registries.CREATIVE_MODE_TAB.equals(event.getRegistryKey().location())) {
             return;
         }
-        event.register((net.minecraft.resources.ResourceKey<? extends net.minecraft.core.Registry<CreativeModeTab>>) event.getRegistryKey(),
+        event.register(Registries.CREATIVE_MODE_TAB,
             helper -> helper.register(MAIN_TAB_ID, createMainTab()));
     }
 

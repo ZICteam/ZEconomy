@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.nbt.CompoundTag;
@@ -67,9 +68,14 @@ public class CurrencyPlayerData {
     public static class Server {
         public MinecraftServer server;
         public Map<UUID, LinkedList<PlayerCurrency>> playersCurrencyMap;
+        private int bulkUpdateDepth;
+        private final Set<UUID> pendingPlayerSyncs;
+        private final Map<UUID, Set<String>> pendingVaultSyncs;
 
         public Server() {
             this.playersCurrencyMap = new ConcurrentHashMap<>();
+            this.pendingPlayerSyncs = ConcurrentHashMap.newKeySet();
+            this.pendingVaultSyncs = new ConcurrentHashMap<>();
         }
 
         public CompoundTag serialize() {
@@ -130,8 +136,7 @@ public class CurrencyPlayerData {
                 playerCurrency.balance = 0.0;
             }
             ZEconomyApiEvents.post(new BalanceChangeEvent(playerId, currencyId, oldBalance, playerCurrency.balance, "ADD"));
-            CurrencyHelper.syncToVaultOnBalanceChange(playerId, currencyId);
-            CurrencyHelper.syncPlayer(playerId);
+            queueBalanceSideEffects(playerId, currencyId);
             return ErrorCodes.SUCCESS;
         }
 
@@ -150,8 +155,7 @@ public class CurrencyPlayerData {
             double oldBalance = playerCurrency.balance;
             playerCurrency.balance = Math.max(0.0, value);
             ZEconomyApiEvents.post(new BalanceChangeEvent(playerId, currencyId, oldBalance, playerCurrency.balance, "SET"));
-            CurrencyHelper.syncToVaultOnBalanceChange(playerId, currencyId);
-            CurrencyHelper.syncPlayer(playerId);
+            queueBalanceSideEffects(playerId, currencyId);
             return ErrorCodes.SUCCESS;
         }
 
@@ -223,8 +227,51 @@ public class CurrencyPlayerData {
                 return ErrorCodes.NOT_FOUND;
             }
             currency.get().isLocked = value;
-            CurrencyHelper.syncPlayer(playerId);
+            queuePlayerSync(playerId);
             return ErrorCodes.SUCCESS;
+        }
+
+        public void runBulkUpdate(Runnable action) {
+            bulkUpdateDepth++;
+            try {
+                action.run();
+            } finally {
+                bulkUpdateDepth = Math.max(0, bulkUpdateDepth - 1);
+                if (bulkUpdateDepth == 0) {
+                    flushPendingSideEffects();
+                }
+            }
+        }
+
+        private void queueBalanceSideEffects(UUID playerId, String currencyId) {
+            if (bulkUpdateDepth > 0) {
+                pendingPlayerSyncs.add(playerId);
+                pendingVaultSyncs.computeIfAbsent(playerId, ignored -> ConcurrentHashMap.newKeySet()).add(currencyId);
+                return;
+            }
+            CurrencyHelper.syncToVaultOnBalanceChange(playerId, currencyId);
+            CurrencyHelper.syncPlayer(playerId);
+        }
+
+        private void queuePlayerSync(UUID playerId) {
+            if (bulkUpdateDepth > 0) {
+                pendingPlayerSyncs.add(playerId);
+                return;
+            }
+            CurrencyHelper.syncPlayer(playerId);
+        }
+
+        private void flushPendingSideEffects() {
+            for (Map.Entry<UUID, Set<String>> entry : pendingVaultSyncs.entrySet()) {
+                for (String currencyId : entry.getValue()) {
+                    CurrencyHelper.syncToVaultOnBalanceChange(entry.getKey(), currencyId);
+                }
+            }
+            pendingVaultSyncs.clear();
+            for (UUID playerId : pendingPlayerSyncs) {
+                CurrencyHelper.syncPlayer(playerId);
+            }
+            pendingPlayerSyncs.clear();
         }
 
         public void newPlayer(Player player) {

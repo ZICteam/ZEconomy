@@ -12,6 +12,10 @@
 2. Verify the mod still loads.
 3. Keep changes focused.
 4. Do not commit generated build output.
+5. If behavior, API, config, or content changed:
+   - bump the mod version in `gradle.properties`
+   - update `CHANGELOG.md` with the new version and a short summary of changes
+   - update documentation that is affected, including `README.md`, `API.md`, and `examples/integration-example/README.md` when applicable
 
 Build command:
 

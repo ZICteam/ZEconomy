@@ -13,6 +13,10 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.TagParser;
@@ -28,6 +32,13 @@ import io.zicteam.zeconomy.utils.CurrencyHelper;
 public final class DataStorageManager {
     private static final Gson GSON = new Gson();
     private static final String GLOBAL_ID = "global";
+    private static final ExecutorService SAVE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "ZEconomy-SaveWorker");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private static final AtomicReference<PendingSave> PENDING_SAVE = new AtomicReference<>();
+    private static final AtomicBoolean SAVE_WORKER_RUNNING = new AtomicBoolean(false);
 
     private DataStorageManager() {
     }
@@ -50,15 +61,24 @@ public final class DataStorageManager {
     public static void saveAll(MinecraftServer server) {
         StorageMode mode = StorageMode.fromConfig(EconomyConfig.STORAGE_MODE.get());
         try {
-            switch (mode) {
-                case JSON -> saveToJson(server);
-                case SQLITE -> saveToSqlite(server);
-                case MYSQL -> saveToMysql(server);
-                case NBT -> saveToNbt(server);
-            }
+            writeSnapshot(mode, createSnapshot(server));
         } catch (Exception e) {
             ZEconomy.printStackTrace("Failed to save storage mode '" + mode.id + "', fallback to nbt", e);
-            saveToNbt(server);
+            try {
+                writeSnapshot(StorageMode.NBT, createSnapshot(server));
+            } catch (Exception fallbackError) {
+                ZEconomy.printStackTrace("Failed to save nbt fallback", fallbackError);
+            }
+        }
+    }
+
+    public static void scheduleSave(MinecraftServer server) {
+        StorageMode mode = StorageMode.fromConfig(EconomyConfig.STORAGE_MODE.get());
+        try {
+            PENDING_SAVE.set(new PendingSave(mode, createSnapshot(server)));
+            ensureSaveWorker();
+        } catch (Exception e) {
+            ZEconomy.printStackTrace("Failed to prepare async save for storage mode '" + mode.id + "'", e);
         }
     }
 
@@ -195,14 +215,96 @@ public final class DataStorageManager {
     }
 
     private static String createPayload(MinecraftServer server) {
+        return createPayload(createSnapshot(server));
+    }
+
+    private static String createPayload(StorageSnapshot snapshot) {
         JsonObject root = new JsonObject();
         root.addProperty("schema", 1);
         root.addProperty("updated_at_epoch", System.currentTimeMillis() / 1000L);
-        root.addProperty("currencies_snbt", CurrencyData.SERVER.serialize().toString());
-        root.addProperty("players_snbt", CurrencyPlayerData.SERVER.serialize().toString());
-        root.addProperty("custom_snbt", CustomPlayerData.SERVER.serialize().toString());
-        root.addProperty("extra_snbt", ZEconomy.EXTRA_DATA.serialize().toString());
+        root.addProperty("currencies_snbt", snapshot.currencies().toString());
+        root.addProperty("players_snbt", snapshot.players().toString());
+        root.addProperty("custom_snbt", snapshot.custom().toString());
+        root.addProperty("extra_snbt", snapshot.extra().toString());
         return GSON.toJson(root);
+    }
+
+    private static StorageSnapshot createSnapshot(MinecraftServer server) {
+        return new StorageSnapshot(
+            server,
+            CurrencyData.SERVER.serialize(),
+            CurrencyPlayerData.SERVER.serialize(),
+            CustomPlayerData.SERVER.serialize(),
+            ZEconomy.EXTRA_DATA.serialize()
+        );
+    }
+
+    private static void writeSnapshot(StorageMode mode, StorageSnapshot snapshot) throws Exception {
+        switch (mode) {
+            case JSON -> writeJsonSnapshot(snapshot);
+            case SQLITE -> writeSqliteSnapshot(snapshot);
+            case MYSQL -> writeMysqlSnapshot(snapshot);
+            case NBT -> writeNbtSnapshot(snapshot);
+        }
+    }
+
+    private static void writeNbtSnapshot(StorageSnapshot snapshot) throws IOException {
+        Path currencyPath = CurrencyHelper.currencyDataPath(snapshot.server());
+        Files.createDirectories(currencyPath.getParent());
+        NbtIo.writeCompressed(snapshot.currencies(), currencyPath.toFile());
+
+        Path playerPath = CurrencyHelper.playerDataPath(snapshot.server());
+        Files.createDirectories(playerPath.getParent());
+        NbtIo.writeCompressed(snapshot.players(), playerPath.toFile());
+
+        Path customPath = CurrencyHelper.customDataPath(snapshot.server());
+        Files.createDirectories(customPath.getParent());
+        NbtIo.writeCompressed(snapshot.custom(), customPath.toFile());
+
+        Path extraPath = CurrencyHelper.extraDataPath(snapshot.server());
+        Files.createDirectories(extraPath.getParent());
+        NbtIo.writeCompressed(snapshot.extra(), extraPath.toFile());
+    }
+
+    private static void writeJsonSnapshot(StorageSnapshot snapshot) throws IOException {
+        Path path = rootDataDir(snapshot.server()).resolve(EconomyConfig.JSON_FILE_NAME.get());
+        Files.createDirectories(path.getParent());
+        Files.writeString(path, createPayload(snapshot), StandardCharsets.UTF_8);
+    }
+
+    private static void writeSqliteSnapshot(StorageSnapshot snapshot) throws Exception {
+        Path dbPath = rootDataDir(snapshot.server()).resolve(EconomyConfig.SQLITE_FILE_NAME.get());
+        Files.createDirectories(dbPath.getParent());
+        String url = "jdbc:sqlite:" + dbPath.toAbsolutePath();
+        writeSqlPayload(url, createPayload(snapshot));
+    }
+
+    private static void writeMysqlSnapshot(StorageSnapshot snapshot) throws Exception {
+        String url = "jdbc:mysql://" + EconomyConfig.MYSQL_HOST.get() + ":" + EconomyConfig.MYSQL_PORT.get() + "/" + EconomyConfig.MYSQL_DATABASE.get() + "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+        writeSqlPayload(url, EconomyConfig.MYSQL_USER.get(), EconomyConfig.MYSQL_PASSWORD.get(), createPayload(snapshot));
+    }
+
+    private static void ensureSaveWorker() {
+        if (!SAVE_WORKER_RUNNING.compareAndSet(false, true)) {
+            return;
+        }
+        SAVE_EXECUTOR.execute(() -> {
+            try {
+                PendingSave pending;
+                while ((pending = PENDING_SAVE.getAndSet(null)) != null) {
+                    try {
+                        writeSnapshot(pending.mode(), pending.snapshot());
+                    } catch (Exception e) {
+                        ZEconomy.printStackTrace("Failed to write async snapshot for storage mode '" + pending.mode().id + "'", e);
+                    }
+                }
+            } finally {
+                SAVE_WORKER_RUNNING.set(false);
+                if (PENDING_SAVE.get() != null) {
+                    ensureSaveWorker();
+                }
+            }
+        });
     }
 
     private static void applyPayload(MinecraftServer server, String payload) throws CommandSyntaxException {
@@ -238,6 +340,18 @@ public final class DataStorageManager {
 
     private static Path rootDataDir(MinecraftServer server) {
         return CurrencyHelper.resolveDataRoot(server);
+    }
+
+    private record StorageSnapshot(
+        MinecraftServer server,
+        CompoundTag currencies,
+        CompoundTag players,
+        CompoundTag custom,
+        CompoundTag extra
+    ) {
+    }
+
+    private record PendingSave(StorageMode mode, StorageSnapshot snapshot) {
     }
 
     private enum StorageMode {

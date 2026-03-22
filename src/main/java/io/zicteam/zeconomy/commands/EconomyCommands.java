@@ -17,7 +17,6 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -39,6 +38,7 @@ import io.zicteam.zeconomy.system.ExtraEconomyData;
 import io.zicteam.zeconomy.network.ZEconomyNetwork;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
 import io.zicteam.zeconomy.utils.ErrorCodes;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.server.permission.nodes.PermissionNode;
 
 public final class EconomyCommands {
@@ -1727,7 +1727,7 @@ public final class EconomyCommands {
         }
         ResourceLocation inId = ResourceLocation.tryParse(inputItem);
         ResourceLocation outId = ResourceLocation.tryParse(outputItem);
-        if (inId == null || outId == null || !BuiltInRegistries.ITEM.containsKey(inId) || !BuiltInRegistries.ITEM.containsKey(outId)) {
+        if (inId == null || outId == null || !ForgeRegistries.ITEMS.containsKey(inId) || !ForgeRegistries.ITEMS.containsKey(outId)) {
             player.sendSystemMessage(Component.literal("Invalid item id").withStyle(ChatFormatting.RED));
             return 0;
         }

@@ -87,7 +87,7 @@ public class ZEconomyEvents {
         if (autosaveTicks >= 20 * 60) {
             autosaveTicks = 0;
             if (event.getServer() != null) {
-                CurrencyHelper.saveAll(event.getServer());
+                DataStorageManager.scheduleSave(event.getServer());
             }
         }
         if (event.getServer() != null) {

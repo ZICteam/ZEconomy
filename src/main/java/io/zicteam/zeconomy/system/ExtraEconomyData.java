@@ -41,6 +41,7 @@ public class ExtraEconomyData {
     public static final int MAX_LOGS = 500;
 
     private final Map<UUID, Map<String, Double>> bankDeposits = new HashMap<>();
+    private final Map<String, Double> bankTotalsByCurrency = new HashMap<>();
     private final Map<UUID, Long> lastHourlyPayoutEpochSec = new HashMap<>();
     private final Map<UUID, List<ItemStack>> mailbox = new HashMap<>();
     private final Map<String, Double> exchangeRates = new HashMap<>();
@@ -49,6 +50,7 @@ public class ExtraEconomyData {
     private final Map<UUID, DailyState> dailyRewards = new HashMap<>();
     private final LinkedList<TransactionRecord> logs = new LinkedList<>();
     private long lastExportEpochSec = 0L;
+    private long nextInterestSweepEpochSec = 0L;
 
     public static ExtraEconomyData load(Path path) {
         ExtraEconomyData data = new ExtraEconomyData();
@@ -87,6 +89,7 @@ public class ExtraEconomyData {
         if (root != null) {
             data.read(root);
         }
+        data.rebuildCaches();
         return data;
     }
 
@@ -139,10 +142,12 @@ public class ExtraEconomyData {
         if (serverTargetBalance < gross) {
             return false;
         }
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, from, -amount);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), from, amount);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), to, -gross);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, to, net);
+        CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() -> {
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, from, -amount);
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), from, amount);
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), to, -gross);
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, to, net);
+        });
         log("EXCHANGE", player.getUUID(), null, to, net, fee, from + "->" + to + " amount=" + amount);
         ZEconomyApiEvents.post(new ExchangeEvent(player.getUUID(), from, to, amount, net, fee));
         syncPlayerMirror(player);
@@ -159,12 +164,16 @@ public class ExtraEconomyData {
         if (balance < total) {
             return false;
         }
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(from, currency, -total);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(to, currency, amount);
-        if (fee > 0.0D) {
-            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), currency, fee);
-        }
+        CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() -> {
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(from, currency, -total);
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(to, currency, amount);
+            if (fee > 0.0D) {
+                CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), currency, fee);
+            }
+        });
         log("TRANSFER", from.getUUID(), to.getUUID(), currency, amount, fee, "pay");
+        syncPlayerMirror(from);
+        syncPlayerMirror(to);
         return true;
     }
 
@@ -176,9 +185,12 @@ public class ExtraEconomyData {
         if (balance < amount) {
             return false;
         }
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, -amount);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), currency, amount);
+        CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() -> {
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, -amount);
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), currency, amount);
+        });
         bankDeposits.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>()).merge(currency, amount, Double::sum);
+        adjustBankTotal(currency, amount);
         lastHourlyPayoutEpochSec.putIfAbsent(player.getUUID(), Instant.now().getEpochSecond());
         log("BANK_DEPOSIT", player.getUUID(), null, currency, amount, 0.0, "");
         ZEconomyApiEvents.post(new BankTransactionEvent(BankTransactionEvent.Action.DEPOSIT, player.getUUID(), currency, amount, getDeposited(player.getUUID(), currency)));
@@ -201,8 +213,11 @@ public class ExtraEconomyData {
             return false;
         }
         account.put(currency, deposited - amount);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), currency, -amount);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, amount);
+        adjustBankTotal(currency, -amount);
+        CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() -> {
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), currency, -amount);
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, amount);
+        });
         log("BANK_WITHDRAW", player.getUUID(), null, currency, amount, 0.0, "");
         ZEconomyApiEvents.post(new BankTransactionEvent(BankTransactionEvent.Action.WITHDRAW, player.getUUID(), currency, amount, getDeposited(player.getUUID(), currency)));
         syncPlayerMirror(player);
@@ -235,7 +250,9 @@ public class ExtraEconomyData {
         if (balance < amount) {
             return false;
         }
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, -amount);
+        CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() ->
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, -amount)
+        );
         vaultDeposits.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>()).merge(currency, amount, Double::sum);
         log("VAULT_DEPOSIT", player.getUUID(), null, currency, amount, 0.0, "");
         ZEconomyApiEvents.post(new VaultTransactionEvent(VaultTransactionEvent.Action.DEPOSIT, player.getUUID(), currency, amount, getVaultBalance(player.getUUID(), currency)));
@@ -253,7 +270,9 @@ public class ExtraEconomyData {
             return false;
         }
         account.put(currency, current - amount);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, amount);
+        CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() ->
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, currency, amount)
+        );
         log("VAULT_WITHDRAW", player.getUUID(), null, currency, amount, 0.0, "");
         ZEconomyApiEvents.post(new VaultTransactionEvent(VaultTransactionEvent.Action.WITHDRAW, player.getUUID(), currency, amount, getVaultBalance(player.getUUID(), currency)));
         syncPlayerMirror(player);
@@ -289,10 +308,12 @@ public class ExtraEconomyData {
             state.streak = 1;
         }
         state.lastClaimDay = today;
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), ZEconomy.PRIMARY_CURRENCY_ID, -zReward);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), ZEconomy.SECONDARY_CURRENCY_ID, -bReward);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, ZEconomy.PRIMARY_CURRENCY_ID, zReward);
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, ZEconomy.SECONDARY_CURRENCY_ID, bReward);
+        CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() -> {
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), ZEconomy.PRIMARY_CURRENCY_ID, -zReward);
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), ZEconomy.SECONDARY_CURRENCY_ID, -bReward);
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, ZEconomy.PRIMARY_CURRENCY_ID, zReward);
+            CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, ZEconomy.SECONDARY_CURRENCY_ID, bReward);
+        });
         log("DAILY_REWARD", player.getUUID(), null, "mixed", zReward, 0.0, ZEconomy.SECONDARY_CURRENCY_ID + "=" + bReward + " streak=" + state.streak);
         ZEconomyApiEvents.post(new DailyRewardEvent(player.getUUID(), zReward, bReward, state.streak));
         syncPlayerMirror(player);
@@ -305,6 +326,10 @@ public class ExtraEconomyData {
 
     public void tickHourlyInterest(MinecraftServer server) {
         long now = Instant.now().getEpochSecond();
+        if (now < nextInterestSweepEpochSec) {
+            return;
+        }
+        nextInterestSweepEpochSec = now + 30L;
         long interval = 3600L;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             UUID id = player.getUUID();
@@ -322,8 +347,10 @@ public class ExtraEconomyData {
                 if (getServerSpendableBalance(entry.getKey()) < payout) {
                     continue;
                 }
-                CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), entry.getKey(), -payout);
-                CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, entry.getKey(), payout);
+                CurrencyHelper.getPlayerCurrencyServerData().runBulkUpdate(() -> {
+                    CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(CurrencyHelper.getServerAccountUUID(), entry.getKey(), -payout);
+                    CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(player, entry.getKey(), payout);
+                });
                 log("BANK_INTEREST", id, null, entry.getKey(), payout, 0.0, "");
                 ZEconomyApiEvents.post(new BankTransactionEvent(BankTransactionEvent.Action.INTEREST, id, entry.getKey(), payout, getDeposited(id, entry.getKey())));
             }
@@ -473,11 +500,7 @@ public class ExtraEconomyData {
     }
 
     private double getTotalBankDeposits(String currency) {
-        double total = 0.0D;
-        for (Map<String, Double> account : bankDeposits.values()) {
-            total += account.getOrDefault(currency, 0.0D);
-        }
-        return total;
+        return bankTotalsByCurrency.getOrDefault(currency, 0.0D);
     }
 
     private double getServerSpendableBalance(String currency) {
@@ -489,6 +512,27 @@ public class ExtraEconomyData {
     private boolean checkPin(UUID playerId, String pin) {
         String current = vaultPins.get(playerId);
         return current != null && current.equals(pin);
+    }
+
+    private void adjustBankTotal(String currency, double delta) {
+        if (currency == null || currency.isBlank() || delta == 0.0D) {
+            return;
+        }
+        double next = bankTotalsByCurrency.getOrDefault(currency, 0.0D) + delta;
+        if (next <= 0.0D) {
+            bankTotalsByCurrency.remove(currency);
+            return;
+        }
+        bankTotalsByCurrency.put(currency, next);
+    }
+
+    private void rebuildCaches() {
+        bankTotalsByCurrency.clear();
+        for (Map<String, Double> account : bankDeposits.values()) {
+            for (Map.Entry<String, Double> entry : account.entrySet()) {
+                adjustBankTotal(entry.getKey(), entry.getValue());
+            }
+        }
     }
 
     private void log(String type, UUID actor, UUID target, String currency, double amount, double fee, String note) {
@@ -603,6 +647,7 @@ public class ExtraEconomyData {
 
     private void read(CompoundTag root) {
         bankDeposits.clear();
+        bankTotalsByCurrency.clear();
         lastHourlyPayoutEpochSec.clear();
         mailbox.clear();
         exchangeRates.clear();
@@ -692,6 +737,7 @@ public class ExtraEconomyData {
                 dailyRewards.put(d.getUUID("uuid"), new DailyState(d.getLong("lastDay"), d.getInt("streak")));
             }
         }
+        rebuildCaches();
     }
 
     public record DailyClaimResult(boolean success, double zReward, double bReward, int streak) {

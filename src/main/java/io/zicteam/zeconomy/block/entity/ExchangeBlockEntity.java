@@ -8,8 +8,8 @@ import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import io.zicteam.zeconomy.content.EconomyContent;
@@ -60,7 +60,7 @@ public class ExchangeBlockEntity extends BlockEntity {
         if (stack.isEmpty()) {
             return "minecraft:air";
         }
-        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
         return id == null ? "minecraft:air" : id.toString();
     }
 
@@ -73,7 +73,7 @@ public class ExchangeBlockEntity extends BlockEntity {
         if (stack.isEmpty()) {
             return "minecraft:air";
         }
-        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
         return id == null ? "minecraft:air" : id.toString();
     }
 
@@ -82,8 +82,10 @@ public class ExchangeBlockEntity extends BlockEntity {
     }
 
     public void setOffer(String inputItemId, int inputCount, String outputItemId, int outputCount) {
-        Item input = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(inputItemId));
-        Item output = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(outputItemId));
+        ResourceLocation inputId = ResourceLocation.tryParse(inputItemId);
+        ResourceLocation outputId = ResourceLocation.tryParse(outputItemId);
+        Item input = inputId == null ? null : ForgeRegistries.ITEMS.getValue(inputId);
+        Item output = outputId == null ? null : ForgeRegistries.ITEMS.getValue(outputId);
         if (input != null && input != net.minecraft.world.item.Items.AIR) {
             inventory.setItem(SLOT_INPUT_TEMPLATE, new ItemStack(input, Math.max(1, inputCount)));
         }

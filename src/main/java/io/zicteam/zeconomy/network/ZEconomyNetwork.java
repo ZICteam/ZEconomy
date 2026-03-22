@@ -30,7 +30,7 @@ import io.zicteam.zeconomy.utils.CurrencyHelper;
 public class ZEconomyNetwork {
     private static final String PROTOCOL = "1";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
-        new ResourceLocation(ZEconomy.MOD_ID, "main"),
+        ResourceLocation.fromNamespaceAndPath(ZEconomy.MOD_ID, "main"),
         () -> PROTOCOL,
         PROTOCOL::equals,
         PROTOCOL::equals

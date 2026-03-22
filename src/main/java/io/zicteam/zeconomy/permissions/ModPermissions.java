@@ -32,7 +32,7 @@ public final class ModPermissions {
 
     private static PermissionNode<Boolean> boolNode(String path) {
         return new PermissionNode<>(
-            new ResourceLocation(ZEconomy.MOD_ID, path),
+            ResourceLocation.fromNamespaceAndPath(ZEconomy.MOD_ID, path),
             PermissionTypes.BOOLEAN,
             (player, uuid, contexts) -> false
         );
