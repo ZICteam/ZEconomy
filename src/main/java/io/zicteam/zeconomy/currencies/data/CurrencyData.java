@@ -56,13 +56,12 @@ public class CurrencyData {
 
     public static CurrencyData deserialize(CompoundTag tag) {
         LinkedList<BaseCurrency> result = new LinkedList<>();
-        if (tag == null || !tag.contains("currencies", Tag.TAG_LIST)) {
-            return new CurrencyData(result);
-        }
-        ListTag list = tag.getList("currencies", Tag.TAG_COMPOUND);
-        for (Tag element : list) {
-            if (element instanceof CompoundTag compound) {
-                result.add(BaseCurrency.deserialize(compound));
+        if (tag != null && tag.contains("currencies", Tag.TAG_LIST)) {
+            ListTag list = tag.getList("currencies", Tag.TAG_COMPOUND);
+            for (Tag element : list) {
+                if (element instanceof CompoundTag compound) {
+                    result.add(BaseCurrency.deserialize(compound));
+                }
             }
         }
         if (result.stream().noneMatch(c -> c.getName().equals(ZEconomy.PRIMARY_CURRENCY_ID))) {

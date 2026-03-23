@@ -4,6 +4,8 @@ import io.zicteam.zeconomy.ZEconomy;
 import io.zicteam.zeconomy.config.EconomyConfig;
 import io.zicteam.zeconomy.system.AdminOperationService;
 import io.zicteam.zeconomy.system.AdminReportService;
+import io.zicteam.zeconomy.system.EconomyExportService;
+import io.zicteam.zeconomy.system.EconomySnapshotReadService;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -119,8 +121,8 @@ final class AdminMaintenanceCommands {
         if (source.getServer() == null) {
             return 0;
         }
-        ZEconomy.EXTRA_DATA.exportJson(source.getServer(), CurrencyHelper.exportJsonPath(source.getServer()));
-        source.sendSuccess(() -> Component.translatable("message.zeconomy.admin.exportnow.success", CurrencyHelper.exportJsonPath(source.getServer())), true);
+        Path exportPath = EconomyExportService.exportNow(source.getServer());
+        source.sendSuccess(() -> Component.translatable("message.zeconomy.admin.exportnow.success", exportPath), true);
         return 1;
     }
 
@@ -193,11 +195,12 @@ final class AdminMaintenanceCommands {
         AdminOperationService.reconcilePlayer(player, source.getServer() != null);
         String syncCurrency = EconomyConfig.VAULT_SYNC_CURRENCY_ID.get();
         double syncBalance = CurrencyHelper.getPlayerCurrencyServerData().getBalance(player, syncCurrency).value;
+        EconomySnapshotReadService.PlayerSnapshot snapshot = EconomySnapshotReadService.player(player.getUUID());
         source.sendSuccess(() -> Component.translatable(
             "message.zeconomy.admin.reconcile.success",
             player.getName().getString(),
             io.zicteam.zeconomy.currencies.data.CurrencyPlayerData.SERVER.getPlayersCurrency(player).size(),
-            ZEconomy.EXTRA_DATA.pendingMailCount(player.getUUID()),
+            snapshot.pendingMail(),
             syncCurrency,
             String.format("%.2f", syncBalance)
         ), true);
@@ -205,17 +208,15 @@ final class AdminMaintenanceCommands {
     }
 
     static int adminDoctorFix(CommandSourceStack source, ServerPlayer player) {
-        AdminOperationService.DoctorFixResult result = AdminOperationService.doctorFixPlayer(player, false);
-        if (source.getServer() != null) {
-            CurrencyHelper.saveAll(source.getServer());
-        }
+        AdminOperationService.DoctorFixResult result = AdminOperationService.doctorFixPlayer(player, source.getServer() != null);
         String syncCurrency = EconomyConfig.VAULT_SYNC_CURRENCY_ID.get();
         double syncBalance = CurrencyHelper.getPlayerCurrencyServerData().getBalance(player, syncCurrency).value;
+        EconomySnapshotReadService.PlayerSnapshot snapshot = EconomySnapshotReadService.player(player.getUUID());
         source.sendSuccess(() -> Component.translatable(
             "message.zeconomy.admin.doctorfix.success",
             player.getName().getString(),
             io.zicteam.zeconomy.currencies.data.CurrencyPlayerData.SERVER.getPlayersCurrency(player).size(),
-            ZEconomy.EXTRA_DATA.pendingMailCount(player.getUUID()),
+            snapshot.pendingMail(),
             result.vaultAttempted() ? "yes" : "no",
             result.vaultOk() ? "ok" : "skip",
             syncCurrency,
@@ -241,7 +242,7 @@ final class AdminMaintenanceCommands {
                 vaultOk++;
             }
         }
-        CurrencyHelper.saveAll(source.getServer());
+        CurrencyHelper.scheduleSave(source.getServer());
         final int totalPlayers = players;
         final int totalVaultAttempted = vaultAttempted;
         final int totalVaultOk = vaultOk;
@@ -260,7 +261,7 @@ final class AdminMaintenanceCommands {
             return 0;
         }
         AdminOperationService.VaultSyncResult result = AdminOperationService.syncVault(player);
-        if (!result.available()) {
+        if (result.failure() == AdminOperationService.OperationFailure.SERVICE_UNAVAILABLE) {
             source.sendFailure(Component.translatable("message.zeconomy.admin.syncvault.unavailable"));
             return 0;
         }

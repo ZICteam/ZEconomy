@@ -57,10 +57,11 @@ public final class CurrencyAdminService {
     public static CurrencyRepairResult repairPlayer(ServerPlayer player, boolean saveAfter) {
         CurrencyPlayerData.SERVER.newPlayer(player);
         CurrencyRepairResult result = repairEntries(player.getUUID(), CurrencyPlayerData.SERVER.getPlayersCurrency(player));
-        CurrencyHelper.syncPlayer(player);
+        EconomyOperationEffects effects = new EconomyOperationEffects().touchPlayer(player);
         if (saveAfter && player.server != null) {
-            CurrencyHelper.scheduleSave(player.server);
+            effects.useServer(player.server).requestSave();
         }
+        effects.dispatch();
         return result;
     }
 
@@ -142,6 +143,10 @@ public final class CurrencyAdminService {
         int repairedPlayers = 0;
         int added = 0;
         int removed = 0;
+        EconomyOperationEffects effects = new EconomyOperationEffects();
+        if (server != null) {
+            effects.useServer(server).requestSave();
+        }
         for (UUID playerId : targetIds) {
             LinkedList<CurrencyPlayerData.PlayerCurrency> list = CurrencyPlayerData.SERVER.getPlayersCurrency(playerId);
             CurrencyInspectResult inspect = inspectEntries(list);
@@ -152,16 +157,9 @@ public final class CurrencyAdminService {
             repairedPlayers++;
             added += result.added();
             removed += result.removed();
-            if (server != null) {
-                ServerPlayer online = server.getPlayerList().getPlayer(playerId);
-                if (online != null) {
-                    CurrencyHelper.syncPlayer(online);
-                }
-            }
+            effects.touchPlayer(playerId);
         }
-        if (server != null) {
-            CurrencyHelper.scheduleSave(server);
-        }
+        effects.dispatch();
         return new CurrencyBatchRepairResult(repairedPlayers, added, removed);
     }
 
@@ -169,19 +167,24 @@ public final class CurrencyAdminService {
         int players = 0;
         int added = 0;
         int removed = 0;
+        EconomyOperationEffects effects = new EconomyOperationEffects();
+        if (server != null) {
+            effects.useServer(server).requestSave();
+        }
         for (Map.Entry<UUID, LinkedList<CurrencyPlayerData.PlayerCurrency>> entry : CurrencyPlayerData.SERVER.playersCurrencyMap.entrySet()) {
             players++;
             CurrencyRepairResult result = repairEntries(entry.getKey(), entry.getValue());
             added += result.added();
             removed += result.removed();
+            effects.touchPlayer(entry.getKey());
         }
         if (server != null) {
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
                 CurrencyPlayerData.SERVER.newPlayer(player);
-                CurrencyHelper.syncPlayer(player);
+                effects.touchPlayer(player);
             }
-            CurrencyHelper.scheduleSave(server);
         }
+        effects.dispatch();
         return new CurrencyBatchRepairResult(players, added, removed);
     }
 

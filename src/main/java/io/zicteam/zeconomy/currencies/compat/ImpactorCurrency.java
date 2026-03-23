@@ -3,6 +3,7 @@ package io.zicteam.zeconomy.currencies.compat;
 import java.util.UUID;
 import io.zicteam.zeconomy.currencies.BaseCurrency;
 import io.zicteam.zeconomy.currencies.CurrencySymbol;
+import io.zicteam.zeconomy.system.EconomyOperationService;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
 
 public class ImpactorCurrency extends BaseCurrency {
@@ -21,11 +22,11 @@ public class ImpactorCurrency extends BaseCurrency {
     }
 
     public void addCurrency(UUID playerId, double value) {
-        CurrencyHelper.getPlayerCurrencyServerData().addCurrencyValue(playerId, ID, value);
+        EconomyOperationService.addBalance(playerId, ID, value);
     }
 
     public void setCurrency(UUID playerId, double value) {
-        CurrencyHelper.getPlayerCurrencyServerData().setCurrencyValue(playerId, ID, value);
+        EconomyOperationService.setBalance(playerId, ID, value);
     }
 
     public double getCurrency(UUID playerId) {

@@ -24,6 +24,7 @@ import io.zicteam.zeconomy.currencies.data.CurrencyData;
 import io.zicteam.zeconomy.currencies.data.CurrencyPlayerData;
 import io.zicteam.zeconomy.config.EconomyConfig;
 import io.zicteam.zeconomy.menu.MailboxMenu;
+import io.zicteam.zeconomy.system.EconomyOperationService;
 import io.zicteam.zeconomy.util.InventoryUtils;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
 
@@ -156,10 +157,9 @@ public class ZEconomyNetwork {
                     return;
                 }
                 if ("MAILBOX_CLAIM".equals(payload.action)) {
-                    for (ItemStack stack : ZEconomy.EXTRA_DATA.claimMail(player.getUUID())) {
+                    for (ItemStack stack : EconomyOperationService.claimMail(player).items()) {
                         InventoryUtils.giveItem(player, stack);
                     }
-                    CurrencyHelper.refreshPlayerState(player);
                     return;
                 }
                 if (!"MAILBOX_SEND".equals(payload.action)) {
@@ -185,14 +185,16 @@ public class ZEconomyNetwork {
                     if (stack.isEmpty()) {
                         continue;
                     }
-                    ZEconomy.EXTRA_DATA.sendMail(target.getUUID(), stack.copy());
+                    EconomyOperationService.MailSendResult result = EconomyOperationService.sendMail(player, target, stack, false);
+                    if (!result.success()) {
+                        continue;
+                    }
                     mailbox.getSendInventory().setItem(i, ItemStack.EMPTY);
                     sent++;
                 }
                 if (sent > 0) {
                     player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.zeconomy.mailbox.sent", sent, target.getName().getString()));
                     target.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.zeconomy.mailbox.received", player.getName().getString()));
-                    CurrencyHelper.refreshPlayersState(target, player);
                 }
             });
             context.setPacketHandled(true);
@@ -228,11 +230,11 @@ public class ZEconomyNetwork {
                     return;
                 }
                 switch (payload.action) {
-                    case "BANK_DEPOSIT" -> ZEconomy.EXTRA_DATA.depositToBank(player, payload.currency, payload.amount);
-                    case "BANK_WITHDRAW" -> ZEconomy.EXTRA_DATA.withdrawFromBank(player, payload.currency, payload.amount);
-                    case "EXCHANGE_B_TO_Z" -> ZEconomy.EXTRA_DATA.exchangeCurrency(player, "b_coin", "z_coin", payload.amount);
+                    case "BANK_DEPOSIT" -> EconomyOperationService.depositBank(player, payload.currency, payload.amount);
+                    case "BANK_WITHDRAW" -> EconomyOperationService.withdrawBank(player, payload.currency, payload.amount);
+                    case "EXCHANGE_B_TO_Z" -> EconomyOperationService.exchange(player, "b_coin", "z_coin", payload.amount);
                     case "MAIL_CLAIM" -> {
-                        for (ItemStack stack : ZEconomy.EXTRA_DATA.claimMail(player.getUUID())) {
+                        for (ItemStack stack : EconomyOperationService.claimMail(player).items()) {
                             InventoryUtils.giveItem(player, stack);
                         }
                     }

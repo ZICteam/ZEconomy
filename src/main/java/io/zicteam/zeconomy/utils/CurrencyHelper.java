@@ -23,6 +23,7 @@ import io.zicteam.zeconomy.currencies.data.CurrencyData;
 import io.zicteam.zeconomy.currencies.data.CurrencyPlayerData;
 import io.zicteam.zeconomy.network.ZEconomyNetwork;
 import io.zicteam.zeconomy.system.DataStorageManager;
+import io.zicteam.zeconomy.system.EconomyPlayerSyncService;
 
 public class CurrencyHelper {
     public CurrencyHelper() {
@@ -48,7 +49,7 @@ public class CurrencyHelper {
         if (player == null) {
             return ErrorCodes.NOT_FOUND;
         }
-        ZEconomy.EXTRA_DATA.syncPlayerMirror(player);
+        EconomyPlayerSyncService.syncPlayerMirror(player);
         return syncPlayer(player);
     }
 
@@ -211,7 +212,7 @@ public class CurrencyHelper {
     }
 
     public static void syncCustomData(ServerPlayer player) {
-        syncPlayer(player);
+        EconomyPlayerSyncService.syncCustomData(player);
     }
 
     public static ErrorCodes updateCustomData(ServerPlayer player, Consumer<CompoundTag> consumer) {
@@ -294,21 +295,21 @@ public class CurrencyHelper {
     }
 
     public static void initVaultBridge(MinecraftServer server) {
-        if (!EconomyConfig.ENABLE_VAULT_BRIDGE.get() || server == null) {
+        if (!safeBooleanConfig(EconomyConfig.ENABLE_VAULT_BRIDGE) || server == null) {
             return;
         }
         VaultBridge.init(server);
     }
 
     public static boolean syncFromVaultOnJoin(ServerPlayer player) {
-        if (player == null || !EconomyConfig.ENABLE_VAULT_BRIDGE.get() || !EconomyConfig.VAULT_PULL_ON_JOIN.get()) {
+        if (player == null || !safeBooleanConfig(EconomyConfig.ENABLE_VAULT_BRIDGE) || !safeBooleanConfig(EconomyConfig.VAULT_PULL_ON_JOIN)) {
             return false;
         }
         initVaultBridge(player.server);
         if (!VaultBridge.isAvailable()) {
             return false;
         }
-        String currencyId = EconomyConfig.VAULT_SYNC_CURRENCY_ID.get();
+        String currencyId = safeStringConfig(EconomyConfig.VAULT_SYNC_CURRENCY_ID);
         if (currencyId == null || currencyId.isBlank()) {
             return false;
         }
@@ -325,7 +326,7 @@ public class CurrencyHelper {
     }
 
     public static void syncToVaultOnBalanceChange(UUID playerId, String currencyId) {
-        if (playerId == null || currencyId == null || !EconomyConfig.ENABLE_VAULT_BRIDGE.get() || !EconomyConfig.VAULT_PUSH_ON_CHANGE.get()) {
+        if (playerId == null || currencyId == null || !safeBooleanConfig(EconomyConfig.ENABLE_VAULT_BRIDGE) || !safeBooleanConfig(EconomyConfig.VAULT_PUSH_ON_CHANGE)) {
             return;
         }
         if (isServerAccount(playerId)) {
@@ -336,7 +337,7 @@ public class CurrencyHelper {
         if (!VaultBridge.isAvailable()) {
             return;
         }
-        String syncCurrency = EconomyConfig.VAULT_SYNC_CURRENCY_ID.get();
+        String syncCurrency = safeStringConfig(EconomyConfig.VAULT_SYNC_CURRENCY_ID);
         if (syncCurrency == null || syncCurrency.isBlank() || !syncCurrency.equals(currencyId)) {
             return;
         }
@@ -345,5 +346,21 @@ public class CurrencyHelper {
             balance = 0.0;
         }
         VaultBridge.writeBalance(playerId, balance);
+    }
+
+    private static boolean safeBooleanConfig(net.minecraftforge.common.ForgeConfigSpec.BooleanValue configValue) {
+        try {
+            return configValue != null && configValue.get();
+        } catch (IllegalStateException ignored) {
+            return false;
+        }
+    }
+
+    private static String safeStringConfig(net.minecraftforge.common.ForgeConfigSpec.ConfigValue<String> configValue) {
+        try {
+            return configValue == null ? null : configValue.get();
+        } catch (IllegalStateException ignored) {
+            return null;
+        }
     }
 }

@@ -9,6 +9,7 @@ import io.zicteam.zeconomy.currencies.CurrencySymbol;
 import io.zicteam.zeconomy.currencies.data.CurrencyPlayerData;
 import io.zicteam.zeconomy.permissions.ModPermissions;
 import io.zicteam.zeconomy.system.CurrencyAdminService;
+import io.zicteam.zeconomy.system.EconomyOperationEffects;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
 import io.zicteam.zeconomy.utils.ErrorCodes;
 import net.minecraft.commands.CommandSourceStack;
@@ -108,7 +109,11 @@ final class AdminCurrencyCommands {
             return 0;
         }
         if (source.getServer() != null) {
-            CurrencyHelper.syncCurrencyData(source.getServer());
+            new EconomyOperationEffects()
+                .useServer(source.getServer())
+                .requestCurrencyDataSync()
+                .requestSave()
+                .dispatch();
         }
         source.sendSuccess(() -> Component.translatable("message.zeconomy.admin.currency.created", id, symbol, String.format("%.2f", defaultValue)), true);
         return 1;
@@ -125,7 +130,11 @@ final class AdminCurrencyCommands {
             return 0;
         }
         if (source.getServer() != null) {
-            CurrencyHelper.syncCurrencyData(source.getServer());
+            new EconomyOperationEffects()
+                .useServer(source.getServer())
+                .requestCurrencyDataSync()
+                .requestSave()
+                .dispatch();
         }
         source.sendSuccess(() -> Component.translatable("message.zeconomy.admin.currency.deleted", id), true);
         return 1;
@@ -146,7 +155,13 @@ final class AdminCurrencyCommands {
             ));
             return 0;
         }
-        CurrencyHelper.syncPlayer(player);
+        if (source.getServer() != null) {
+            new EconomyOperationEffects()
+                .useServer(source.getServer())
+                .touchPlayer(player)
+                .requestSave()
+                .dispatch();
+        }
         source.sendSuccess(() -> Component.translatable(
             locked ? "message.zeconomy.admin.currency.locked" : "message.zeconomy.admin.currency.unlocked",
             player.getName().getString(),
@@ -166,19 +181,17 @@ final class AdminCurrencyCommands {
         java.util.Set<java.util.UUID> targetIds = CurrencyAdminService.collectTargetIds(source.getServer());
         int changed = 0;
         int failed = 0;
+        EconomyOperationEffects effects = new EconomyOperationEffects().useServer(source.getServer()).requestSave();
         for (java.util.UUID playerId : targetIds) {
             ErrorCodes result = CurrencyPlayerData.SERVER.lockCurrency(playerId, id, locked);
             if (result.isSuccess()) {
                 changed++;
-                ServerPlayer online = source.getServer().getPlayerList().getPlayer(playerId);
-                if (online != null) {
-                    CurrencyHelper.syncPlayer(online);
-                }
+                effects.touchPlayer(playerId);
             } else {
                 failed++;
             }
         }
-        CurrencyHelper.saveAll(source.getServer());
+        effects.dispatch();
         final int changedCount = changed;
         final int failedCount = failed;
         source.sendSuccess(() -> Component.translatable(

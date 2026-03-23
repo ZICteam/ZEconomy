@@ -28,6 +28,7 @@ public final class AdminReportService {
     }
 
     public static StatusReport status(MinecraftServer server) {
+        EconomySnapshotReadService.RuntimeSnapshot runtime = EconomySnapshotReadService.runtime();
         return new StatusReport(
             EconomyConfig.STORAGE_MODE.get(),
             storageTarget(server),
@@ -41,7 +42,7 @@ public final class AdminReportService {
             EconomyConfig.VAULT_SYNC_CURRENCY_ID.get(),
             server.getPlayerList().getPlayerCount(),
             ZEconomyEvents.pendingVaultSyncCount(),
-            ZEconomy.EXTRA_DATA.getAllRates().size(),
+            runtime.exchangeRateCount(),
             CurrencyData.SERVER.currencies.size()
         );
     }
@@ -83,6 +84,7 @@ public final class AdminReportService {
         String syncCurrency = EconomyConfig.VAULT_SYNC_CURRENCY_ID.get();
         double syncBalance = CurrencyHelper.getPlayerCurrencyServerData().getBalance(player, syncCurrency).value;
         CompoundTag custom = CustomPlayerData.SERVER.getPlayerCustomData(player).nbt;
+        EconomySnapshotReadService.PlayerSnapshot snapshot = EconomySnapshotReadService.player(player.getUUID());
         LinkedList<PlayerWalletLine> wallet = new LinkedList<>();
         for (CurrencyPlayerData.PlayerCurrency currency : CurrencyHelper.getPlayerCurrencyServerData().getPlayersCurrency(player)) {
             wallet.add(new PlayerWalletLine(currency.currency.getName(), currency.balance, yesNo(currency.isLocked)));
@@ -90,14 +92,14 @@ public final class AdminReportService {
         return new PlayerInspectReport(
             player.getName().getString(),
             player.getUUID().toString(),
-            ZEconomy.EXTRA_DATA.pendingMailCount(player.getUUID()),
-            ZEconomy.EXTRA_DATA.getDailyStreak(player.getUUID()),
-            yesNo(custom.getBoolean("vault_has_pin")),
+            snapshot.pendingMail(),
+            snapshot.dailyStreak(),
+            yesNo(snapshot.hasVaultPin()),
             syncCurrency,
             syncBalance,
             wallet,
-            sortedCopy(ZEconomy.EXTRA_DATA.getAllDeposits(player.getUUID())),
-            sortedCopy(ZEconomy.EXTRA_DATA.getAllVaultBalances(player.getUUID())),
+            sortedCopy(snapshot.bankBalances()),
+            sortedCopy(snapshot.vaultBalances()),
             custom.getDouble("bank_z_coin"),
             custom.getDouble("bank_b_coin"),
             custom.getDouble("vault_z_coin"),

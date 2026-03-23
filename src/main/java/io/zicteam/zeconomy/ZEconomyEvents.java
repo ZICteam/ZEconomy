@@ -21,7 +21,10 @@ import io.zicteam.zeconomy.menu.BankMenu;
 import io.zicteam.zeconomy.npc.BankNpcHelper;
 import io.zicteam.zeconomy.permissions.ModPermissions;
 import io.zicteam.zeconomy.system.DataStorageManager;
-import io.zicteam.zeconomy.system.ExtraEconomyData;
+import io.zicteam.zeconomy.system.EconomyExportService;
+import io.zicteam.zeconomy.system.EconomyInterestService;
+import io.zicteam.zeconomy.system.EconomyPlayerSyncService;
+import io.zicteam.zeconomy.system.EconomyRateMutationService;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
 
 @Mod.EventBusSubscriber(modid = ZEconomy.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -47,9 +50,9 @@ public class ZEconomyEvents {
         DataStorageManager.loadAll(server);
         CurrencyHelper.ensureDefaultCurrency();
         CurrencyHelper.ensureServerAccount();
-        ZEconomy.EXTRA_DATA.ensureDefaultRates();
+        EconomyRateMutationService.ensureDefaultRates();
         CurrencyHelper.initVaultBridge(server);
-        ZEconomy.EXTRA_DATA.exportJson(server, CurrencyHelper.exportJsonPath(server));
+        EconomyExportService.exportNow(server);
         CurrencyHelper.syncCurrencyData(server);
     }
 
@@ -68,7 +71,7 @@ public class ZEconomyEvents {
         CustomPlayerData.SERVER.createData(serverPlayer);
         pendingVaultSync.put(serverPlayer.getUUID(), VAULT_SYNC_RETRY_WINDOW_TICKS);
         CurrencyHelper.syncFromVaultOnJoin(serverPlayer);
-        ZEconomy.EXTRA_DATA.syncPlayerMirror(serverPlayer);
+        EconomyPlayerSyncService.syncPlayerMirror(serverPlayer);
         CurrencyHelper.syncPlayer(serverPlayer);
         CurrencyHelper.syncCustomData(serverPlayer);
     }
@@ -91,8 +94,8 @@ public class ZEconomyEvents {
             }
         }
         if (event.getServer() != null) {
-            ZEconomy.EXTRA_DATA.tickHourlyInterest(event.getServer());
-            ZEconomy.EXTRA_DATA.tickExport(event.getServer(), CurrencyHelper.exportJsonPath(event.getServer()));
+            EconomyInterestService.tickHourlyInterest(event.getServer());
+            EconomyExportService.tickExport(event.getServer());
             if (!pendingVaultSync.isEmpty() && event.getServer().getTickCount() % VAULT_SYNC_RETRY_INTERVAL_TICKS == 0) {
                 for (UUID playerId : pendingVaultSync.keySet().toArray(UUID[]::new)) {
                     Integer remainingTicks = pendingVaultSync.get(playerId);
@@ -105,7 +108,7 @@ public class ZEconomyEvents {
                         continue;
                     }
                     if (CurrencyHelper.syncFromVaultOnJoin(player)) {
-                        ZEconomy.EXTRA_DATA.syncPlayerMirror(player);
+                        EconomyPlayerSyncService.syncPlayerMirror(player);
                         CurrencyHelper.syncPlayer(player);
                         CurrencyHelper.syncCustomData(player);
                         pendingVaultSync.remove(playerId);

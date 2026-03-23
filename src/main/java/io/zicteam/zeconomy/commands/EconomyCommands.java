@@ -37,7 +37,10 @@ import io.zicteam.zeconomy.system.AdminOperationService;
 import io.zicteam.zeconomy.system.AdminReportService;
 import io.zicteam.zeconomy.system.CurrencyAdminService;
 import io.zicteam.zeconomy.system.DataStorageManager;
+import io.zicteam.zeconomy.system.EconomyExportService;
 import io.zicteam.zeconomy.system.EconomyOperationService;
+import io.zicteam.zeconomy.system.EconomyRateMutationService;
+import io.zicteam.zeconomy.system.EconomySnapshotReadService;
 import io.zicteam.zeconomy.system.ExtraEconomyData;
 import io.zicteam.zeconomy.network.ZEconomyNetwork;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
@@ -97,7 +100,7 @@ public final class EconomyCommands {
     }
 
     static int showLogs(CommandSourceStack source, int limit) {
-        java.util.List<ExtraEconomyData.TransactionRecord> records = ZEconomy.EXTRA_DATA.getRecentLogs(limit);
+        java.util.List<ExtraEconomyData.TransactionRecord> records = EconomySnapshotReadService.recentLogs(limit);
         source.sendSuccess(() -> Component.literal("Recent logs: " + records.size()), false);
         for (ExtraEconomyData.TransactionRecord r : records) {
             String line = TS.format(Instant.ofEpochSecond(r.epochSec())) + " | " + r.type() + " | " + r.currency() + " " + String.format("%.2f", r.amount()) + " fee=" + String.format("%.2f", r.fee()) + " note=" + r.note();
@@ -110,8 +113,8 @@ public final class EconomyCommands {
         if (source.getServer() == null) {
             return 0;
         }
-        ZEconomy.EXTRA_DATA.exportJson(source.getServer(), CurrencyHelper.exportJsonPath(source.getServer()));
-        source.sendSuccess(() -> Component.literal("Exported: " + CurrencyHelper.exportJsonPath(source.getServer())), true);
+        Path exportPath = EconomyExportService.exportNow(source.getServer());
+        source.sendSuccess(() -> Component.literal("Exported: " + exportPath), true);
         return 1;
     }
 
@@ -122,7 +125,7 @@ public final class EconomyCommands {
         CurrencyHelper.saveAll(source.getServer());
         DataStorageManager.loadAll(source.getServer());
         CurrencyHelper.ensureDefaultCurrency();
-        ZEconomy.EXTRA_DATA.ensureDefaultRates();
+        EconomyRateMutationService.ensureDefaultRates();
         GuiLayoutConfig.reload();
         CurrencyHelper.syncCurrencyData(source.getServer());
         source.sendSuccess(() -> Component.literal("ZEconomy reloaded: data + configs + GUI layouts"), true);
@@ -143,7 +146,11 @@ public final class EconomyCommands {
     }
 
     static int adminSet(CommandSourceStack source, ServerPlayer player, String currency, double amount) {
-        AdminOperationService.setPlayerBalance(player, currency, amount);
+        AdminOperationService.OperationResult result = AdminOperationService.setPlayerBalance(player, currency, amount);
+        if (!result.success()) {
+            source.sendFailure(Component.literal("Balance set failed: " + describeAdminFailure(result.failure())));
+            return 0;
+        }
         source.sendSuccess(() -> Component.literal("Balance set: " + player.getName().getString() + " " + currency + "=" + amount), true);
         return 1;
     }
@@ -163,25 +170,54 @@ public final class EconomyCommands {
     }
 
     static int serverSet(CommandSourceStack source, String currency, double amount) {
-        AdminOperationService.setServerBalance(currency, amount);
+        AdminOperationService.TreasuryMutationResult result = AdminOperationService.setServerBalance(currency, amount);
+        if (!result.success()) {
+            source.sendFailure(Component.literal("Server treasury set failed: " + describeAdminFailure(result.failure())));
+            return 0;
+        }
         source.sendSuccess(() -> Component.literal("Server treasury set: " + currency + "=" + String.format("%.2f", amount)), true);
         return 1;
     }
 
     static int serverGive(CommandSourceStack source, String currency, double amount) {
-        double balance = AdminOperationService.giveServerBalance(currency, amount);
-        source.sendSuccess(() -> Component.literal("Server treasury +" + String.format("%.2f", amount) + " " + currency + " => " + String.format("%.2f", balance)), true);
+        AdminOperationService.TreasuryMutationResult result = AdminOperationService.giveServerBalance(currency, amount);
+        if (!result.success()) {
+            source.sendFailure(Component.literal("Server treasury give failed: " + describeAdminFailure(result.failure())));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Server treasury +" + String.format("%.2f", amount) + " " + currency + " => " + String.format("%.2f", result.balanceAfter())), true);
         return 1;
     }
 
     static int serverTake(CommandSourceStack source, String currency, double amount) {
-        AdminOperationService.TreasuryTakeResult result = AdminOperationService.takeServerBalance(currency, amount);
+        AdminOperationService.TreasuryMutationResult result = AdminOperationService.takeServerBalance(currency, amount);
         if (!result.success()) {
-            source.sendFailure(Component.literal("Server treasury insufficient spendable balance: " + String.format("%.2f", result.spendableBefore())));
+            source.sendFailure(Component.literal("Server treasury take failed: " + describeTreasuryFailure(result)));
             return 0;
         }
         source.sendSuccess(() -> Component.literal("Server treasury -" + String.format("%.2f", amount) + " " + currency + " => " + String.format("%.2f", result.balanceAfter())), true);
         return 1;
+    }
+
+    private static String describeAdminFailure(AdminOperationService.OperationFailure failure) {
+        if (failure == null) {
+            return "unknown failure";
+        }
+        return switch (failure) {
+            case INVALID_PLAYER -> "player is unavailable";
+            case INVALID_AMOUNT -> "invalid amount";
+            case INSUFFICIENT_FUNDS -> "insufficient spendable balance";
+            case FEATURE_DISABLED -> "feature is disabled";
+            case SERVICE_UNAVAILABLE -> "service is unavailable";
+            case OPERATION_FAILED -> "operation requirements were not met";
+        };
+    }
+
+    private static String describeTreasuryFailure(AdminOperationService.TreasuryMutationResult result) {
+        if (result.failure() == AdminOperationService.OperationFailure.INSUFFICIENT_FUNDS) {
+            return "insufficient spendable balance: " + String.format("%.2f", result.spendableBefore());
+        }
+        return describeAdminFailure(result.failure());
     }
 
     private static int setExchangeBlockOffer(ServerPlayer player, BlockPos pos, String inputItem, int inputCount, String outputItem, int outputCount) {

@@ -3,6 +3,8 @@ package io.zicteam.zeconomy.commands;
 import io.zicteam.zeconomy.ZEconomy;
 import io.zicteam.zeconomy.config.EconomyConfig;
 import io.zicteam.zeconomy.system.EconomyOperationService;
+import io.zicteam.zeconomy.system.EconomyReadService;
+import io.zicteam.zeconomy.system.EconomySnapshotReadService;
 import io.zicteam.zeconomy.system.ExtraEconomyData;
 import io.zicteam.zeconomy.utils.CurrencyHelper;
 import net.minecraft.ChatFormatting;
@@ -17,166 +19,192 @@ final class UserEconomyCommands {
     static int showBalance(CommandSourceStack source, ServerPlayer player) {
         double sdm = CurrencyHelper.getPlayerCurrencyServerData().getBalance(player, "z_coin").value;
         double b = CurrencyHelper.getPlayerCurrencyServerData().getBalance(player, "b_coin").value;
+        EconomySnapshotReadService.PlayerSnapshot snapshot = EconomySnapshotReadService.player(player.getUUID());
         source.sendSuccess(() -> Component.literal(player.getName().getString() + " wallet: z_coin=" + String.format("%.2f", sdm) + ", b_coin=" + String.format("%.2f", b)), false);
         source.sendSuccess(() -> Component.literal("bank: z=" + String.format("%.2f", ZEconomy.EXTRA_DATA.getDeposited(player.getUUID(), "z_coin")) + ", b=" + String.format("%.2f", ZEconomy.EXTRA_DATA.getDeposited(player.getUUID(), "b_coin"))), false);
         source.sendSuccess(() -> Component.literal("vault: z=" + String.format("%.2f", ZEconomy.EXTRA_DATA.getVaultBalance(player.getUUID(), "z_coin")) + ", b=" + String.format("%.2f", ZEconomy.EXTRA_DATA.getVaultBalance(player.getUUID(), "b_coin"))), false);
-        source.sendSuccess(() -> Component.literal("daily streak: " + ZEconomy.EXTRA_DATA.getDailyStreak(player.getUUID()) + " | mail: " + ZEconomy.EXTRA_DATA.pendingMailCount(player.getUUID())), false);
+        source.sendSuccess(() -> Component.literal("daily streak: " + snapshot.dailyStreak() + " | mail: " + snapshot.pendingMail()), false);
         return 1;
     }
 
     static int pay(ServerPlayer from, ServerPlayer to, String currency, double amount) {
-        boolean ok = EconomyOperationService.transfer(from, to, currency, amount);
-        if (!ok) {
-            from.sendSystemMessage(Component.literal("Transfer failed: insufficient funds or invalid params").withStyle(ChatFormatting.RED));
+        EconomyOperationService.TransferResult result = EconomyOperationService.transfer(from, to, currency, amount);
+        if (!result.success()) {
+            from.sendSystemMessage(Component.literal("Transfer failed: " + describeFailure(result.failure())).withStyle(ChatFormatting.RED));
             return 0;
         }
-        double fee = amount * EconomyConfig.TRANSFER_FEE_RATE.get();
-        from.sendSystemMessage(Component.literal("Sent " + amount + " " + currency + " to " + to.getName().getString() + " (fee " + String.format("%.2f", fee) + ")"));
-        to.sendSystemMessage(Component.literal("Received " + amount + " " + currency + " from " + from.getName().getString()).withStyle(ChatFormatting.GREEN));
+        from.sendSystemMessage(Component.literal("Sent " + String.format("%.2f", result.transferred()) + " " + currency + " to " + to.getName().getString() + " (fee " + String.format("%.2f", result.fee()) + ")"));
+        to.sendSystemMessage(Component.literal("Received " + String.format("%.2f", result.transferred()) + " " + currency + " from " + from.getName().getString()).withStyle(ChatFormatting.GREEN));
         return 1;
     }
 
     static int bankDeposit(ServerPlayer player, String currency, double amount) {
-        if (!EconomyOperationService.depositBank(player, currency, amount)) {
-            player.sendSystemMessage(Component.literal("Bank deposit failed").withStyle(ChatFormatting.RED));
+        EconomyOperationService.BankResult result = EconomyOperationService.depositBank(player, currency, amount);
+        if (!result.success()) {
+            player.sendSystemMessage(Component.literal("Bank deposit failed: " + describeFailure(result.failure())).withStyle(ChatFormatting.RED));
             return 0;
         }
-        player.sendSystemMessage(Component.literal("Bank deposit: " + amount + " " + currency));
+        player.sendSystemMessage(Component.literal("Bank deposit: " + String.format("%.2f", result.amount()) + " " + currency + " | bank=" + String.format("%.2f", result.depositedAfter())));
         return 1;
     }
 
     static int bankWithdraw(ServerPlayer player, String currency, double amount) {
-        if (!EconomyOperationService.withdrawBank(player, currency, amount)) {
-            player.sendSystemMessage(Component.literal("Bank withdraw failed").withStyle(ChatFormatting.RED));
+        EconomyOperationService.BankResult result = EconomyOperationService.withdrawBank(player, currency, amount);
+        if (!result.success()) {
+            player.sendSystemMessage(Component.literal("Bank withdraw failed: " + describeFailure(result.failure())).withStyle(ChatFormatting.RED));
             return 0;
         }
-        player.sendSystemMessage(Component.literal("Bank withdraw: " + amount + " " + currency));
+        player.sendSystemMessage(Component.literal("Bank withdraw: " + String.format("%.2f", result.amount()) + " " + currency + " | bank=" + String.format("%.2f", result.depositedAfter())));
         return 1;
     }
 
     static int bankInfo(ServerPlayer player) {
-        EconomyCommands.MapToLines.print(player, "Bank balances", ZEconomy.EXTRA_DATA.getAllDeposits(player.getUUID()));
+        EconomyCommands.MapToLines.print(player, "Bank balances", EconomySnapshotReadService.player(player.getUUID()).bankBalances());
         player.sendSystemMessage(Component.literal("Hourly interest: " + (EconomyConfig.HOURLY_INTEREST_RATE.get() * 100.0) + "%"));
         return 1;
     }
 
     static int exchangeCurrency(ServerPlayer player, String from, String to, double amount) {
-        if (!EconomyOperationService.exchange(player, from, to, amount)) {
-            player.sendSystemMessage(Component.literal("Exchange failed (rate/balance/config)").withStyle(ChatFormatting.RED));
+        EconomyOperationService.ExchangeResult result = EconomyOperationService.exchange(player, from, to, amount);
+        if (!result.success()) {
+            player.sendSystemMessage(Component.literal("Exchange failed: " + describeFailure(result.failure())).withStyle(ChatFormatting.RED));
             return 0;
         }
-        double rate = ZEconomy.EXTRA_DATA.getRate(from, to);
-        player.sendSystemMessage(Component.literal("Exchanged " + amount + " " + from + " -> " + String.format("%.2f", amount * rate) + " " + to + " (before fee)"));
+        player.sendSystemMessage(Component.literal(
+            "Exchanged " + String.format("%.2f", amount) + " " + from
+                + " -> gross " + String.format("%.2f", result.gross()) + " " + to
+                + ", fee " + String.format("%.2f", result.fee())
+                + ", net " + String.format("%.2f", result.net())
+        ));
         return 1;
     }
 
     static int setRate(CommandSourceStack source, String from, String to, double rate) {
-        ZEconomy.EXTRA_DATA.setRate(from, to, rate);
-        source.sendSuccess(() -> Component.literal("Rate set: " + from + " -> " + to + " = " + rate), true);
+        EconomyOperationService.RateMutationResult result = EconomyOperationService.setRate(from, to, rate);
+        if (!result.success()) {
+            source.sendFailure(Component.literal("Rate set failed: " + describeFailure(result.failure())));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Rate set: " + result.fromCurrencyId() + " -> " + result.toCurrencyId() + " = " + result.rate()), true);
         return 1;
     }
 
     static int setRatePair(CommandSourceStack source, String from, String to, double rate) {
-        ZEconomy.EXTRA_DATA.setRate(from, to, rate);
-        double reverse = 1.0D / rate;
-        ZEconomy.EXTRA_DATA.setRate(to, from, reverse);
+        EconomyOperationService.RatePairMutationResult result = EconomyOperationService.setRatePair(from, to, rate);
+        if (!result.success()) {
+            source.sendFailure(Component.literal("Rate pair set failed: " + describeFailure(result.failure())));
+            return 0;
+        }
         source.sendSuccess(() -> Component.translatable(
             "message.zeconomy.exchange.rate_pair_set",
-            from,
-            to,
-            String.format("%.4f", rate),
-            to,
-            from,
-            String.format("%.4f", reverse)
+            result.fromCurrencyId(),
+            result.toCurrencyId(),
+            String.format("%.4f", result.rate()),
+            result.toCurrencyId(),
+            result.fromCurrencyId(),
+            String.format("%.4f", result.reverseRate())
         ), true);
         return 1;
     }
 
     static int mailClaim(ServerPlayer player) {
-        java.util.List<net.minecraft.world.item.ItemStack> list = ZEconomy.EXTRA_DATA.claimMail(player.getUUID());
-        if (list.isEmpty()) {
+        EconomyOperationService.MailClaimResult result = EconomyOperationService.claimMail(player);
+        if (!result.success()) {
             player.sendSystemMessage(Component.literal("Mailbox is empty").withStyle(ChatFormatting.GRAY));
             return 1;
         }
-        for (net.minecraft.world.item.ItemStack stack : list) {
+        for (net.minecraft.world.item.ItemStack stack : result.items()) {
             io.zicteam.zeconomy.util.InventoryUtils.giveItem(player, stack);
         }
-        CurrencyHelper.refreshPlayerState(player);
-        player.sendSystemMessage(Component.literal("Claimed " + list.size() + " mail item stack(s)").withStyle(ChatFormatting.GREEN));
+        player.sendSystemMessage(Component.literal("Claimed " + result.items().size() + " mail item stack(s)").withStyle(ChatFormatting.GREEN));
         return 1;
     }
 
     static int mailSend(ServerPlayer player, ServerPlayer target) {
-        if (!EconomyConfig.ENABLE_MAILBOX.get()) {
-            player.sendSystemMessage(Component.translatable("message.zeconomy.mailbox.disabled").withStyle(ChatFormatting.YELLOW));
+        EconomyOperationService.MailSendResult result = EconomyOperationService.sendMail(player, target);
+        if (!result.success()) {
+            switch (result.failure()) {
+                case FEATURE_DISABLED -> player.sendSystemMessage(Component.translatable("message.zeconomy.mailbox.disabled").withStyle(ChatFormatting.YELLOW));
+                case SELF_TARGET -> player.sendSystemMessage(Component.translatable("message.zeconomy.mailbox.self_send").withStyle(ChatFormatting.YELLOW));
+                case EMPTY_HAND -> player.sendSystemMessage(Component.translatable("message.zeconomy.mailbox.empty_hand").withStyle(ChatFormatting.RED));
+                default -> player.sendSystemMessage(Component.literal("Mailbox send failed: " + describeFailure(result.failure())).withStyle(ChatFormatting.RED));
+            }
             return 0;
         }
-        if (player.getUUID().equals(target.getUUID())) {
-            player.sendSystemMessage(Component.translatable("message.zeconomy.mailbox.self_send").withStyle(ChatFormatting.YELLOW));
-            return 0;
-        }
-        net.minecraft.world.item.ItemStack held = player.getMainHandItem();
-        if (held.isEmpty()) {
-            player.sendSystemMessage(Component.translatable("message.zeconomy.mailbox.empty_hand").withStyle(ChatFormatting.RED));
-            return 0;
-        }
-        net.minecraft.world.item.ItemStack mailStack = held.copy();
-        ZEconomy.EXTRA_DATA.sendMail(target.getUUID(), mailStack);
-        held.setCount(0);
-        CurrencyHelper.refreshPlayersState(target, player);
-        player.sendSystemMessage(Component.translatable("message.zeconomy.mailbox.command_sent", mailStack.getCount(), mailStack.getHoverName(), target.getName()).withStyle(ChatFormatting.GREEN));
+        player.sendSystemMessage(Component.translatable("message.zeconomy.mailbox.command_sent", result.sentStack().getCount(), result.sentStack().getHoverName(), target.getName()).withStyle(ChatFormatting.GREEN));
         target.sendSystemMessage(Component.translatable("message.zeconomy.mailbox.received", player.getName().getString()));
         return 1;
     }
 
     static int vaultSetPin(ServerPlayer player, String pin) {
-        if (!ZEconomy.EXTRA_DATA.setVaultPin(player.getUUID(), pin)) {
+        EconomyOperationService.OperationResult result = EconomyOperationService.setVaultPin(player.getUUID(), pin);
+        if (!result.success()) {
             player.sendSystemMessage(Component.literal("PIN must be 4-12 digits").withStyle(ChatFormatting.RED));
             return 0;
         }
-        CurrencyHelper.refreshPlayerState(player);
         player.sendSystemMessage(Component.literal("Vault PIN updated").withStyle(ChatFormatting.GREEN));
         return 1;
     }
 
     static int vaultDeposit(ServerPlayer player, String pin, String currency, double amount) {
-        if (!EconomyOperationService.depositVault(player, pin, currency, amount)) {
-            player.sendSystemMessage(Component.literal("Vault deposit failed (check PIN/balance)").withStyle(ChatFormatting.RED));
+        EconomyOperationService.VaultResult result = EconomyOperationService.depositVault(player, pin, currency, amount);
+        if (!result.success()) {
+            player.sendSystemMessage(Component.literal("Vault deposit failed: " + describeFailure(result.failure())).withStyle(ChatFormatting.RED));
             return 0;
         }
-        player.sendSystemMessage(Component.literal("Vault deposit: " + amount + " " + currency));
+        player.sendSystemMessage(Component.literal("Vault deposit: " + String.format("%.2f", result.amount()) + " " + currency + " | vault=" + String.format("%.2f", result.vaultBalanceAfter())));
         return 1;
     }
 
     static int vaultWithdraw(ServerPlayer player, String pin, String currency, double amount) {
-        if (!EconomyOperationService.withdrawVault(player, pin, currency, amount)) {
-            player.sendSystemMessage(Component.literal("Vault withdraw failed (check PIN/balance)").withStyle(ChatFormatting.RED));
+        EconomyOperationService.VaultResult result = EconomyOperationService.withdrawVault(player, pin, currency, amount);
+        if (!result.success()) {
+            player.sendSystemMessage(Component.literal("Vault withdraw failed: " + describeFailure(result.failure())).withStyle(ChatFormatting.RED));
             return 0;
         }
-        player.sendSystemMessage(Component.literal("Vault withdraw: " + amount + " " + currency));
+        player.sendSystemMessage(Component.literal("Vault withdraw: " + String.format("%.2f", result.amount()) + " " + currency + " | vault=" + String.format("%.2f", result.vaultBalanceAfter())));
         return 1;
     }
 
     static int vaultBalance(ServerPlayer player) {
-        EconomyCommands.MapToLines.print(player, "Vault balances", ZEconomy.EXTRA_DATA.getAllVaultBalances(player.getUUID()));
+        EconomyCommands.MapToLines.print(player, "Vault balances", EconomySnapshotReadService.player(player.getUUID()).vaultBalances());
         return 1;
     }
 
     static int dailyClaim(ServerPlayer player) {
-        ExtraEconomyData.DailyClaimResult result = EconomyOperationService.claimDaily(player);
+        EconomyOperationService.DailyOperationResult result = EconomyOperationService.claimDaily(player);
         if (!result.success()) {
-            player.sendSystemMessage(Component.literal("Daily reward already claimed today").withStyle(ChatFormatting.YELLOW));
+            player.sendSystemMessage(Component.literal("Daily reward unavailable right now").withStyle(ChatFormatting.YELLOW));
             return 0;
         }
-        player.sendSystemMessage(Component.literal("Daily reward: +" + String.format("%.2f", result.zReward()) + " z_coin, +" + String.format("%.2f", result.bReward()) + " b_coin | streak " + result.streak()).withStyle(ChatFormatting.GREEN));
+        player.sendSystemMessage(Component.literal("Daily reward: +" + String.format("%.2f", result.reward().zReward()) + " z_coin, +" + String.format("%.2f", result.reward().bReward()) + " b_coin | streak " + result.reward().streak()).withStyle(ChatFormatting.GREEN));
         return 1;
+    }
+
+    private static String describeFailure(EconomyOperationService.OperationFailure failure) {
+        if (failure == null) {
+            return "unknown failure";
+        }
+        return switch (failure) {
+            case INVALID_PLAYER -> "player is unavailable";
+            case INVALID_AMOUNT -> "invalid amount";
+            case INVALID_PIN -> "invalid PIN";
+            case INSUFFICIENT_FUNDS -> "insufficient funds";
+            case FEATURE_DISABLED -> "feature is disabled";
+            case SELF_TARGET -> "cannot target self";
+            case EMPTY_HAND -> "empty hand";
+            case EMPTY_MAILBOX -> "mailbox is empty";
+            case RATE_NOT_FOUND -> "rate not found";
+            case ALREADY_CLAIMED -> "already claimed";
+            case OPERATION_FAILED -> "operation requirements were not met";
+        };
     }
 
     static int showTop(CommandSourceStack source, String currency) {
         if (source.getServer() == null) {
             return 0;
         }
-        java.util.List<ExtraEconomyData.RichEntry> top = ZEconomy.EXTRA_DATA.getTopRich(source.getServer(), currency, 10, true);
+        java.util.List<ExtraEconomyData.RichEntry> top = EconomyReadService.getTopRich(source.getServer(), currency, 10, true);
         source.sendSuccess(() -> Component.literal("Top rich (" + currency + "):"), false);
         int i = 1;
         for (ExtraEconomyData.RichEntry e : top) {
@@ -216,7 +244,7 @@ final class UserEconomyCommands {
     }
 
     static int showRates(CommandSourceStack source) {
-        java.util.Map<String, Double> rates = ZEconomy.EXTRA_DATA.getAllRates();
+        java.util.Map<String, Double> rates = EconomySnapshotReadService.exchangeRates();
         source.sendSuccess(() -> Component.translatable("message.zeconomy.exchange.rates_header"), false);
         if (rates.isEmpty()) {
             source.sendSuccess(() -> Component.translatable("message.zeconomy.exchange.rates_empty"), false);
@@ -232,8 +260,8 @@ final class UserEconomyCommands {
     }
 
     static int clearRate(CommandSourceStack source, String from, String to) {
-        boolean removed = ZEconomy.EXTRA_DATA.removeRate(from, to);
-        if (!removed) {
+        EconomyOperationService.RateMutationResult result = EconomyOperationService.clearRate(from, to);
+        if (!result.success()) {
             source.sendFailure(Component.translatable("message.zeconomy.exchange.rate_missing", from, to));
             return 0;
         }
@@ -242,7 +270,7 @@ final class UserEconomyCommands {
     }
 
     static int auditRates(CommandSourceStack source) {
-        java.util.Map<String, Double> rates = ZEconomy.EXTRA_DATA.getAllRates();
+        java.util.Map<String, Double> rates = EconomySnapshotReadService.exchangeRates();
         java.util.Set<String> currencies = io.zicteam.zeconomy.currencies.data.CurrencyData.SERVER.currencies.stream()
             .map(io.zicteam.zeconomy.currencies.BaseCurrency::getName)
             .collect(java.util.stream.Collectors.toSet());
@@ -274,11 +302,10 @@ final class UserEconomyCommands {
     }
 
     static int resetRates(CommandSourceStack source) {
-        ZEconomy.EXTRA_DATA.clearRates();
-        ZEconomy.EXTRA_DATA.ensureDefaultRates();
+        EconomyOperationService.RateResetResult result = EconomyOperationService.resetRates();
         source.sendSuccess(() -> Component.translatable(
             "message.zeconomy.exchange.rates_reset",
-            ZEconomy.EXTRA_DATA.getAllRates().size()
+            result.rateCountAfterReset()
         ), true);
         return 1;
     }

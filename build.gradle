@@ -144,6 +144,7 @@ dependencies {
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -205,4 +206,8 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
 }
